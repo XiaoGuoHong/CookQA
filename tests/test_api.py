@@ -66,6 +66,7 @@ def settings_for(tmp_path):
         embedding_model="bge-m3",
         chat_model="gpt-oss:120b-cloud",
         ollama_timeout=600.0,
+        ollama_embed_batch_size=1,
         top_k=5,
         min_score=0.15,
         enable_rebuild_api=True,
