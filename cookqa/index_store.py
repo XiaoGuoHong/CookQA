@@ -10,6 +10,7 @@ from .models import RecipeChunk, RecipeDocument
 
 EmbedTexts = Callable[[Sequence[str]], Sequence[Sequence[float]]]
 EmbedQuery = Callable[[str], Sequence[float]]
+MAX_EMBED_TEXT_CHARS = 1200
 
 
 def _as_matrix(vectors: Sequence[Sequence[float]]) -> np.ndarray:
@@ -29,12 +30,32 @@ def build_recipe_chunks(recipes: Iterable[RecipeDocument]) -> List[RecipeChunk]:
                 recipe_id=recipe.recipe_id,
                 name=recipe.name,
                 source_path=recipe.source_path,
-                text=recipe.search_text(),
+                text=_compact_recipe_text(recipe),
                 kind="recipe",
                 ordinal=0,
             )
         )
     return chunks
+
+
+def _compact_recipe_text(recipe: RecipeDocument) -> str:
+    parts = [
+        f"菜名：{recipe.name}",
+        f"分类：{recipe.category}",
+    ]
+    if recipe.description:
+        parts.append(f"简介：{recipe.description}")
+    if recipe.difficulty:
+        parts.append(f"难度：{recipe.difficulty}")
+    if recipe.calories:
+        parts.append(f"热量：{recipe.calories}")
+    if recipe.ingredients:
+        parts.append(f"原料：{'、'.join(recipe.ingredients)}")
+    if recipe.tools:
+        parts.append(f"工具：{'、'.join(recipe.tools)}")
+    if recipe.steps:
+        parts.append(f"步骤摘要：{'；'.join(recipe.summary_steps())}")
+    return "\n".join(parts)[:MAX_EMBED_TEXT_CHARS]
 
 
 def build_step_chunks(recipes: Iterable[RecipeDocument]) -> List[RecipeChunk]:
