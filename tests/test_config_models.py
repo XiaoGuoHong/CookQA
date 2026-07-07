@@ -12,6 +12,7 @@ def test_settings_from_env_uses_defaults(monkeypatch, tmp_path):
     assert settings.embedding_model == "bge-m3"
     assert settings.chat_model == "gpt-oss:120b-cloud"
     assert settings.ollama_timeout == 600.0
+    assert settings.ollama_embed_batch_size == 1
     assert settings.data_dir == tmp_path / "data"
     assert settings.parsed_recipes_path == tmp_path / "data" / "parsed" / "recipes.json"
     assert settings.recipe_index_path == tmp_path / "data" / "indexes" / "recipes.faiss"
@@ -24,6 +25,14 @@ def test_settings_from_env_allows_ollama_timeout_override(monkeypatch):
     settings = CookQASettings.from_env()
 
     assert settings.ollama_timeout == 900.0
+
+
+def test_settings_from_env_allows_embed_batch_size_override(monkeypatch):
+    monkeypatch.setenv("OLLAMA_EMBED_BATCH_SIZE", "4")
+
+    settings = CookQASettings.from_env()
+
+    assert settings.ollama_embed_batch_size == 4
 
 
 def test_recipe_document_builds_search_text():
