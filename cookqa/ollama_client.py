@@ -10,22 +10,26 @@ class OllamaClient:
         embedding_model: str,
         chat_model: str,
         timeout: float = 120.0,
+        embed_batch_size: int = 16,
     ):
         self.base_url = base_url.rstrip("/")
         self.embedding_model = embedding_model
         self.chat_model = chat_model
         self.timeout = timeout
+        self.embed_batch_size = embed_batch_size
 
     def embed_texts(self, texts: Sequence[str]) -> list[list[float]]:
         vectors: list[list[float]] = []
         with httpx.Client(timeout=self.timeout) as client:
-            for text in texts:
+            for index in range(0, len(texts), self.embed_batch_size):
+                batch = list(texts[index : index + self.embed_batch_size])
                 response = client.post(
-                    f"{self.base_url}/api/embeddings",
-                    json={"model": self.embedding_model, "prompt": text},
+                    f"{self.base_url}/api/embed",
+                    json={"model": self.embedding_model, "input": batch},
                 )
                 response.raise_for_status()
-                vectors.append(response.json()["embedding"])
+                data = response.json()
+                vectors.extend(data["embeddings"])
         return vectors
 
     def embed_query(self, text: str) -> list[float]:
