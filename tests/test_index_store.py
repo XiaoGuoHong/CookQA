@@ -36,6 +36,17 @@ def test_build_recipe_and_step_chunks():
     assert any("红汤" in chunk.text for chunk in step_chunks)
 
 
+def test_recipe_chunk_text_is_compact_for_embedding():
+    recipes = load_recipes(FIXTURE_ROOT)
+
+    chunk = next(item for item in build_recipe_chunks(recipes) if item.name == "水煮牛肉")
+
+    assert "菜名：水煮牛肉" in chunk.text
+    assert "原料：牛肉、豆芽、鸡蛋、豆瓣酱、姜、蒜" in chunk.text
+    assert "步骤摘要：" in chunk.text
+    assert len(chunk.text) <= 1200
+
+
 def test_faiss_store_searches_payloads(tmp_path):
     recipes = load_recipes(FIXTURE_ROOT)
     chunks = build_recipe_chunks(recipes)
