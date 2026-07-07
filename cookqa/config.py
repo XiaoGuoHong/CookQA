@@ -15,6 +15,7 @@ class CookQASettings:
     embedding_model: str
     chat_model: str
     ollama_timeout: float
+    ollama_embed_batch_size: int
     top_k: int
     min_score: float
     enable_rebuild_api: bool
@@ -34,6 +35,7 @@ class CookQASettings:
             embedding_model=os.getenv("OLLAMA_EMBEDDING_MODEL", "bge-m3"),
             chat_model=os.getenv("OLLAMA_CHAT_MODEL", "gpt-oss:120b-cloud"),
             ollama_timeout=float(os.getenv("OLLAMA_TIMEOUT", "600")),
+            ollama_embed_batch_size=int(os.getenv("OLLAMA_EMBED_BATCH_SIZE", "1")),
             top_k=int(os.getenv("COOKQA_TOP_K", "5")),
             min_score=float(os.getenv("COOKQA_MIN_SCORE", "0.15")),
             enable_rebuild_api=os.getenv(
