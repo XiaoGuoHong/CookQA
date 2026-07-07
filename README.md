@@ -1,2 +1,40 @@
-# CookQA
-学做饭吧，真的。你可以不会修电脑、不会换灯泡，但总不能饿了就重启自己。会做饭以后，便宜、健康、还能拍照发朋友圈；做得好叫生活，做得一般叫减脂餐，做糊了就叫碳烤风味。总之，怎么算都不亏。
+# CookQA 食神
+
+CookQA is a FastAPI-first Chinese recipe GraphRAG service based on HowToCook,
+FAISS, and Ollama.
+
+## Features
+
+- Parse HowToCook Markdown recipes.
+- Build lightweight recipe graph relations.
+- Build FAISS recipe and step indexes with Ollama `bge-m3`.
+- Answer Chinese cooking questions with Ollama `gpt-oss:120b-cloud`.
+- Return recommendation lists, match reasons, sources, and grounded answers.
+- Run locally or with Docker.
+
+## Local Setup
+
+```powershell
+pip install -r requirements.txt
+$env:HOWTOCOOK_PATH="D:\path\to\HowToCook"
+$env:OLLAMA_BASE_URL="http://127.0.0.1:11434"
+python main.py rebuild
+uvicorn api.app:app --host 127.0.0.1 --port 8000
+```
+
+## API Examples
+
+```powershell
+curl -X POST http://127.0.0.1:8000/api/v1/chat `
+  -H "Content-Type: application/json" `
+  -d "{\"question\":\"牛肉可以怎么做\",\"top_k\":5}"
+```
+
+## Docker
+
+```powershell
+docker compose up --build
+```
+
+The Docker image runs CookQA only. Ollama stays external and is configured by
+`OLLAMA_BASE_URL`.
