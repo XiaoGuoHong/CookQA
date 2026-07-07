@@ -17,6 +17,7 @@ def settings_for(tmp_path):
         ollama_base_url="http://127.0.0.1:11434",
         embedding_model="bge-m3",
         chat_model="gpt-oss:120b-cloud",
+        ollama_timeout=600.0,
         top_k=5,
         min_score=0.15,
         enable_rebuild_api=True,

@@ -11,10 +11,19 @@ def test_settings_from_env_uses_defaults(monkeypatch, tmp_path):
     assert settings.ollama_base_url == "http://127.0.0.1:11434"
     assert settings.embedding_model == "bge-m3"
     assert settings.chat_model == "gpt-oss:120b-cloud"
+    assert settings.ollama_timeout == 600.0
     assert settings.data_dir == tmp_path / "data"
     assert settings.parsed_recipes_path == tmp_path / "data" / "parsed" / "recipes.json"
     assert settings.recipe_index_path == tmp_path / "data" / "indexes" / "recipes.faiss"
     assert settings.step_index_path == tmp_path / "data" / "indexes" / "steps.faiss"
+
+
+def test_settings_from_env_allows_ollama_timeout_override(monkeypatch):
+    monkeypatch.setenv("OLLAMA_TIMEOUT", "900")
+
+    settings = CookQASettings.from_env()
+
+    assert settings.ollama_timeout == 900.0
 
 
 def test_recipe_document_builds_search_text():

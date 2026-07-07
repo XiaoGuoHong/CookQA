@@ -14,6 +14,7 @@ class CookQASettings:
     ollama_base_url: str
     embedding_model: str
     chat_model: str
+    ollama_timeout: float
     top_k: int
     min_score: float
     enable_rebuild_api: bool
@@ -32,6 +33,7 @@ class CookQASettings:
             ).rstrip("/"),
             embedding_model=os.getenv("OLLAMA_EMBEDDING_MODEL", "bge-m3"),
             chat_model=os.getenv("OLLAMA_CHAT_MODEL", "gpt-oss:120b-cloud"),
+            ollama_timeout=float(os.getenv("OLLAMA_TIMEOUT", "600")),
             top_k=int(os.getenv("COOKQA_TOP_K", "5")),
             min_score=float(os.getenv("COOKQA_MIN_SCORE", "0.15")),
             enable_rebuild_api=os.getenv(

@@ -43,6 +43,7 @@ class CookQAService:
                 settings.ollama_base_url,
                 settings.embedding_model,
                 settings.chat_model,
+                timeout=settings.ollama_timeout,
             )
         recipes = cls._load_recipe_metadata(settings.parsed_recipes_path)
         graph = RecipeGraph.build(recipes)
