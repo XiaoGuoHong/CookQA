@@ -41,7 +41,7 @@ class Settings:
     cache_ttl_seconds: int = 30
 
     @classmethod
-    def from_env(cls) -> "Settings":
+    def from_env(cls) -> Settings:
         password = os.getenv("NEO4J_PASSWORD") or None
         return cls(
             host=os.getenv("COOKQA_HOST", "127.0.0.1"),

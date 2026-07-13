@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
 
 from cookqa.models import QueryConstraints, Recipe
 
@@ -43,16 +43,19 @@ def satisfies_hard_filters(
         return False
     if any(item.casefold() in ingredient_names for item in excluded_ingredients):
         return False
-    if constraints.max_minutes is not None:
-        if recipe.duration_minutes is None or recipe.duration_minutes > constraints.max_minutes:
-            return False
-    if constraints.categories:
-        if not recipe.categories or not set(constraints.categories).intersection(recipe.categories):
-            return False
-    if constraints.tools:
-        if not recipe.tools or not set(constraints.tools).issubset(recipe.tools):
-            return False
-    if constraints.difficulties:
-        if recipe.difficulty is None or recipe.difficulty not in constraints.difficulties:
-            return False
-    return True
+    if constraints.max_minutes is not None and (
+        recipe.duration_minutes is None or recipe.duration_minutes > constraints.max_minutes
+    ):
+        return False
+    if constraints.categories and (
+        not recipe.categories or not set(constraints.categories).intersection(recipe.categories)
+    ):
+        return False
+    if constraints.tools and (
+        not recipe.tools or not set(constraints.tools).issubset(recipe.tools)
+    ):
+        return False
+    return not (
+        constraints.difficulties
+        and (recipe.difficulty is None or recipe.difficulty not in constraints.difficulties)
+    )

@@ -22,9 +22,7 @@ def percentile(values: list[float], percentile_value: float) -> float | None:
 
 def load_cases(path: Path) -> list[dict]:
     return [
-        json.loads(line)
-        for line in path.read_text(encoding="utf-8").splitlines()
-        if line.strip()
+        json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()
     ]
 
 
@@ -45,9 +43,7 @@ def violates_constraints(recipe: dict, constraints: dict) -> bool:
         return True
     max_minutes = constraints.get("max_minutes")
     duration = recipe.get("duration_minutes")
-    if max_minutes is not None and (duration is None or duration > max_minutes):
-        return True
-    return False
+    return bool(max_minutes is not None and (duration is None or duration > max_minutes))
 
 
 def run(base_url: str, cases_path: Path, warmups: int, timeout: float) -> dict:
@@ -80,8 +76,12 @@ def run(base_url: str, cases_path: Path, warmups: int, timeout: float) -> dict:
                     hard_filter_violations += 1
 
         detail_candidate = next(
-            (item for case in cases for item in [client.post("/api/v1/search", json={"query": case["query"]})]
-             if item.status_code == 200 and item.json().get("results")),
+            (
+                item
+                for case in cases
+                for item in [client.post("/api/v1/search", json={"query": case["query"]})]
+                if item.status_code == 200 and item.json().get("results")
+            ),
             None,
         )
         if detail_candidate is not None:
@@ -112,7 +112,9 @@ def run(base_url: str, cases_path: Path, warmups: int, timeout: float) -> dict:
         "first_token_p95_ms": first_token_p95,
         "cold_start_ms": None,
         "targets": {
-            "recall_at_5_ge_0_90": evaluated == len(cases) and hits / evaluated >= 0.9 if evaluated else False,
+            "recall_at_5_ge_0_90": evaluated == len(cases) and hits / evaluated >= 0.9
+            if evaluated
+            else False,
             "hard_filter_violations_eq_0": hard_filter_violations == 0,
             "search_p95_le_1000_ms": search_p95 is not None and search_p95 <= 1000,
             "first_token_p95_le_3000_ms": first_token_p95 is not None and first_token_p95 <= 3000,

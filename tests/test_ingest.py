@@ -6,7 +6,6 @@ from cookqa.ingest.normalize import stable_recipe_id
 from cookqa.ingest.parser import RecipeParseError, parse_recipe
 from cookqa.ingest.selection import load_selection
 
-
 SAMPLE = Path(__file__).parent / "fixtures" / "howtocook" / "sample.md"
 
 

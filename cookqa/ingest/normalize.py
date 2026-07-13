@@ -5,7 +5,6 @@ import re
 from collections.abc import Mapping
 from pathlib import PurePosixPath
 
-
 _SPACE_RE = re.compile(r"[\s　]+")
 _TRAILING_PUNCTUATION_RE = re.compile(r"[：:，,。；;]+$")
 

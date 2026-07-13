@@ -4,7 +4,6 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-
 Intent = Literal[
     "exact_recipe",
     "ingredient_lookup",
@@ -72,7 +71,7 @@ class Recipe(BaseModel):
         return value
 
     @model_validator(mode="after")
-    def ingredients_are_unique(self) -> "Recipe":
+    def ingredients_are_unique(self) -> Recipe:
         names = [item.name.casefold() for item in self.ingredients]
         if len(names) != len(set(names)):
             raise ValueError("规范化食材名称不能重复")

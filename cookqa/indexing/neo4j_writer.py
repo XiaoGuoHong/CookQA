@@ -5,7 +5,6 @@ from typing import Any
 
 from cookqa.models import Recipe
 
-
 _UPSERT_CYPHER = """
 UNWIND $recipes AS item
 MERGE (recipe:Recipe {recipe_id: item.recipe_id})
@@ -60,7 +59,8 @@ class Neo4jGraphWriter:
             database_=self.database,
         )
         records, _, _ = self.driver.execute_query(
-            "MATCH (recipe:Recipe {data_version: $data_version}) RETURN recipe.recipe_id AS recipe_id",
+            "MATCH (recipe:Recipe {data_version: $data_version}) "
+            "RETURN recipe.recipe_id AS recipe_id",
             data_version=data_version,
             database_=self.database,
         )

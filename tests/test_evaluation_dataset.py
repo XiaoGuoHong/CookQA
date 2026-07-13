@@ -2,12 +2,13 @@ import json
 from collections import Counter
 from pathlib import Path
 
-
 ROOT = Path(__file__).parents[1]
 
 
 def load_jsonl(path):
-    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    return [
+        json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()
+    ]
 
 
 def test_evaluation_set_has_required_coverage_and_schema():

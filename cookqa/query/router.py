@@ -6,7 +6,6 @@ from collections.abc import Mapping, Set
 from cookqa.ingest.normalize import normalize_query_text
 from cookqa.models import QueryConstraints, QueryPlan
 
-
 _DURATION_RE = re.compile(r"(\d+)\s*分钟(?:内|以内|以下)?")
 _STEP_TERMS = ("什么时候", "先放", "后放", "下锅", "火候", "几分钟", "怎么切")
 _COMPARISON_TERMS = ("区别", "比较", "不同", "哪个好")
@@ -25,9 +24,7 @@ class QueryRouter:
         self._recipe_names = {
             normalize_query_text(name): canonical for name, canonical in recipe_names.items()
         }
-        self._ingredient_names = {
-            normalize_query_text(name): name for name in ingredient_names
-        }
+        self._ingredient_names = {normalize_query_text(name): name for name in ingredient_names}
         self._ingredient_aliases = {
             normalize_query_text(alias): canonical
             for alias, canonical in (ingredient_aliases or {}).items()
@@ -55,7 +52,10 @@ class QueryRouter:
     def _excluded_ingredients(query: str, ingredients: list[str]) -> list[str]:
         excluded: list[str] = []
         for ingredient in ingredients:
-            if any(token in query for token in (f"不含{ingredient}", f"不要{ingredient}", f"去掉{ingredient}")):
+            if any(
+                token in query
+                for token in (f"不含{ingredient}", f"不要{ingredient}", f"去掉{ingredient}")
+            ):
                 excluded.append(ingredient)
         if any(token in query for token in ("不辣", "不要辣", "免辣")):
             excluded.append("辣")

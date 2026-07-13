@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import json
-from pathlib import Path
 from collections.abc import Iterable, Set
+from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -32,7 +32,7 @@ class IndexManifest(BaseModel):
         )
 
     @classmethod
-    def load(cls, path: Path) -> "IndexManifest":
+    def load(cls, path: Path) -> IndexManifest:
         return cls.model_validate_json(path.read_text(encoding="utf-8"))
 
 

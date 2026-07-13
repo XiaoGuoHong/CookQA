@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import time
-from dataclasses import dataclass, field
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
 
 from cookqa.models import QueryPlan, Recipe, SearchResult
 from cookqa.retrieval.fusion import reciprocal_rank_fusion, satisfies_hard_filters
@@ -54,7 +54,12 @@ class RetrievalCoordinator:
                 or set(recipe.aliases).intersection(plan.recognized_recipes)
             ]
             results = [
-                SearchResult(recipe=self.recipes[recipe_id], score=1.0, reasons=["菜名精确匹配"], retrieval_sources=["exact"])
+                SearchResult(
+                    recipe=self.recipes[recipe_id],
+                    score=1.0,
+                    reasons=["菜名精确匹配"],
+                    retrieval_sources=["exact"],
+                )
                 for recipe_id in exact_ids[:limit]
             ]
             return RetrievalOutcome(results=results, strategy=["exact"], timings_ms={"exact": 0.0})
