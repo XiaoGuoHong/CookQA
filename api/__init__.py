@@ -1,1 +1,1 @@
-
+"""CookQA HTTP API."""

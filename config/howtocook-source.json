@@ -1,0 +1,6 @@
+{
+  "repository": "https://github.com/Anduin2017/HowToCook.git",
+  "commit": "cbc524e28a88bf5ccc6e094004cfbeba1ea6fdf9",
+  "selection": "config/recipe-selection-mvp.txt",
+  "recipe_count": 200
+}

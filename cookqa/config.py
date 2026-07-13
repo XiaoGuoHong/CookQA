@@ -1,81 +1,59 @@
+from __future__ import annotations
+
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+def _env_int(name: str, default: int) -> int:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        return int(raw)
+    except ValueError as exc:
+        raise ValueError(f"{name} 必须是整数") from exc
 
 
-@dataclass(frozen=True)
-class CookQASettings:
-    project_root: Path
-    data_dir: Path
-    howtocook_path: Path
-    ollama_base_url: str
-    embedding_model: str
-    chat_model: str
-    ollama_timeout: float
-    ollama_embed_batch_size: int
-    top_k: int
-    min_score: float
-    enable_rebuild_api: bool
+def _env_float(name: str, default: float) -> float:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        return float(raw)
+    except ValueError as exc:
+        raise ValueError(f"{name} 必须是数字") from exc
+
+
+@dataclass(frozen=True, slots=True)
+class Settings:
+    host: str = "127.0.0.1"
+    port: int = 8000
+    chat_model: str = "qwen3.5:4b"
+    embedding_model: str = "bge-m3"
+    ollama_base_url: str = "http://127.0.0.1:11434"
+    neo4j_uri: str = "bolt://127.0.0.1:7687"
+    neo4j_user: str = "neo4j"
+    neo4j_password: str | None = field(default=None, repr=False)
+    data_dir: Path = Path("Data")
+    request_timeout_seconds: float = 3.0
+    dense_timeout_seconds: float = 0.75
+    cache_ttl_seconds: int = 30
 
     @classmethod
-    def from_env(cls) -> "CookQASettings":
-        data_dir = Path(os.getenv("COOKQA_DATA_DIR", PROJECT_ROOT / "data")).resolve()
+    def from_env(cls) -> "Settings":
+        password = os.getenv("NEO4J_PASSWORD") or None
         return cls(
-            project_root=PROJECT_ROOT,
-            data_dir=data_dir,
-            howtocook_path=Path(
-                os.getenv("HOWTOCOOK_PATH", data_dir / "HowToCook")
-            ).resolve(),
-            ollama_base_url=os.getenv(
-                "OLLAMA_BASE_URL", "http://127.0.0.1:11434"
-            ).rstrip("/"),
-            embedding_model=os.getenv("OLLAMA_EMBEDDING_MODEL", "bge-m3"),
-            chat_model=os.getenv("OLLAMA_CHAT_MODEL", "gpt-oss:120b-cloud"),
-            ollama_timeout=float(os.getenv("OLLAMA_TIMEOUT", "600")),
-            ollama_embed_batch_size=int(os.getenv("OLLAMA_EMBED_BATCH_SIZE", "1")),
-            top_k=int(os.getenv("COOKQA_TOP_K", "5")),
-            min_score=float(os.getenv("COOKQA_MIN_SCORE", "0.15")),
-            enable_rebuild_api=os.getenv(
-                "COOKQA_ENABLE_REBUILD_API", "true"
-            ).lower()
-            in {"1", "true", "yes", "on"},
+            host=os.getenv("COOKQA_HOST", "127.0.0.1"),
+            port=_env_int("COOKQA_PORT", 8000),
+            chat_model=os.getenv("COOKQA_CHAT_MODEL", "qwen3.5:4b"),
+            embedding_model=os.getenv("COOKQA_EMBEDDING_MODEL", "bge-m3"),
+            ollama_base_url=os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip("/"),
+            neo4j_uri=os.getenv("NEO4J_URI", "bolt://127.0.0.1:7687"),
+            neo4j_user=os.getenv("NEO4J_USER", "neo4j"),
+            neo4j_password=password,
+            data_dir=Path(os.getenv("COOKQA_DATA_DIR", "Data")),
+            request_timeout_seconds=_env_float("COOKQA_REQUEST_TIMEOUT", 3.0),
+            dense_timeout_seconds=_env_float("COOKQA_DENSE_TIMEOUT", 0.75),
+            cache_ttl_seconds=_env_int("COOKQA_CACHE_TTL", 30),
         )
-
-    @property
-    def parsed_dir(self) -> Path:
-        return self.data_dir / "parsed"
-
-    @property
-    def graph_dir(self) -> Path:
-        return self.data_dir / "graph"
-
-    @property
-    def index_dir(self) -> Path:
-        return self.data_dir / "indexes"
-
-    @property
-    def parsed_recipes_path(self) -> Path:
-        return self.parsed_dir / "recipes.json"
-
-    @property
-    def graph_path(self) -> Path:
-        return self.graph_dir / "relations.json"
-
-    @property
-    def recipe_index_path(self) -> Path:
-        return self.index_dir / "recipes.faiss"
-
-    @property
-    def recipe_payload_path(self) -> Path:
-        return self.index_dir / "recipes.payload.json"
-
-    @property
-    def step_index_path(self) -> Path:
-        return self.index_dir / "steps.faiss"
-
-    @property
-    def step_payload_path(self) -> Path:
-        return self.index_dir / "steps.payload.json"

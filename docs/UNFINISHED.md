@@ -1,0 +1,293 @@
+# CookQA 未完成事项
+
+- 更新日期：2026-07-13
+- 当前状态：主要代码骨架已落地，但尚未满足设计文档的完整验收标准
+- 目标平台：Windows 本机
+- 设计基线：[`docs/superpowers/specs/2026-07-13-cookqa-graph-rag-design.md`](superpowers/specs/2026-07-13-cookqa-graph-rag-design.md)
+- 实施计划：[`docs/superpowers/plans/2026-07-13-cookqa-graph-rag-implementation.md`](superpowers/plans/2026-07-13-cookqa-graph-rag-implementation.md)
+
+## 1. 当前结论
+
+CookQA 已经具备领域模型、HowToCook 解析、确定性查询路由、混合检索协调、FastAPI 接口、Ollama 适配器、静态 Web UI、索引构建框架、固定数据选择和评测集。
+
+当前版本只能视为“实现中的本地 Graph RAG MVP”，不能宣称完整完成或性能达标。真实 FAISS、Neo4j 安全切换、菜谱比较、完整本地集成和性能验收仍未闭环。
+
+## 2. 已落地内容
+
+### 2.1 数据与领域层
+
+- Pydantic 菜谱、食材、查询计划、搜索结果和就绪状态模型。
+- 根据源文件相对路径生成稳定 `recipe_id`。
+- HowToCook Markdown 确定性解析和食材别名规范化。
+- 固定上游提交：`cbc524e28a88bf5ccc6e094004cfbeba1ea6fdf9`。
+- 固定 200 道菜选择清单，排除了饮料、调酒、单独酱料、甜点、半成品和模板。
+
+### 2.2 查询与检索层
+
+- 六类查询意图的规则路由。
+- BM25 稀疏召回。
+- 菜谱级精确余弦稠密召回框架。
+- RRF 排名融合。
+- 食材、耗时、分类、工具和难度硬过滤框架。
+- 检索组件失败时的显式降级信息。
+- 参数化 Neo4j 查询模板，不使用 LLM 生成 Cypher。
+
+### 2.3 应用层
+
+- `POST /api/v1/search`。
+- `GET /api/v1/recipes/{recipe_id}`。
+- `POST /api/v1/recipes/{recipe_id}/answer/stream`。
+- `GET /health` 和 `GET /ready`。
+- 搜索、结构化详情和 LLM 生成相互分离。
+- 静态 HTML、CSS、JavaScript Web UI。
+- Windows 启动、索引构建和基准测试脚本。
+
+## 3. 当前验证证据
+
+### 3.1 自动化测试
+
+运行命令：
+
+```powershell
+$env:TEMP="$PWD\.tmp\pytest-temp"
+$env:TMP=$env:TEMP
+python -m pytest -q --basetemp .tmp\pytest-unfinished-doc -o cache_dir=.tmp\pytest-cache
+```
+
+最近结果：
+
+```text
+49 passed, 1 warning in 0.80s
+```
+
+唯一警告来自当前环境的 FastAPI TestClient 兼容层：
+
+```text
+StarletteDeprecationWarning: Using httpx with starlette.testclient is deprecated
+```
+
+### 3.2 数据验证
+
+当前选择清单已验证：
+
+```text
+SELECTION_COUNT 200
+PARSED_COUNT 200
+UNIQUE_IDS 200
+```
+
+这只能证明当前解析器能够解析选中的 200 个文件，不代表 Neo4j、稠密索引和 BM25 已在真实环境完成联合构建。
+
+### 3.3 HTTP 冒烟
+
+在没有活动索引的本机状态下：
+
+```text
+GET  /health                  -> 200
+GET  /ready                   -> 503
+GET  /                        -> 200
+GET  /static/app.js           -> 200
+POST /api/v1/search           -> 503
+```
+
+这证明进程存活、Web UI 可访问，并且服务不会在运行数据缺失时冒充就绪。
+
+### 3.4 安全检查
+
+- 已执行常见 API Key、Token、Bearer Token 和硬编码 Neo4j 密码模式扫描，无命中。
+- `.env.example` 只包含占位符。
+- 当前日志与公开错误不输出密码、Token、Cookie、Authorization 请求头或堆栈。
+
+## 4. P0：完成前必须修复
+
+### 4.1 使用真实 FAISS 索引
+
+当前 `cookqa/retrieval/faiss_store.py` 中的 `ExactVectorIndex` 使用 NumPy 执行精确余弦相似度，并持久化为 `faiss.npz`。类名和检索源名称虽然使用了 `faiss`，但实际没有创建或加载 FAISS 索引。
+
+必须完成：
+
+- 使用 `faiss.IndexFlatIP` 构建菜谱级精确索引。
+- 对向量执行一致的 L2 归一化。
+- 分开持久化 FAISS 二进制索引和 `recipe_id` 映射。
+- 加载时校验索引维度、向量数量和 ID 数量。
+- FAISS 缺失、损坏或超时时进入明确降级路径，不能静默切换为另一个实现并继续宣称 FAISS 可用。
+- 增加真实构建、保存、重载、查询和维度不一致测试。
+
+完成判定：`/ready` 中的 FAISS 状态来自真实 FAISS 索引校验，版本清单不再指向 NumPy `.npz` 文件。
+
+### 4.2 改造 Neo4j 构建和回滚
+
+当前 `cookqa/indexing/neo4j_writer.py` 在导入前执行：
+
+```cypher
+MATCH (recipe:Recipe) DETACH DELETE recipe
+```
+
+如果后续导入或一致性校验失败，旧版本已经被删除，不满足设计文档要求的“构建失败继续使用上一版”。
+
+必须完成：
+
+- 新版本使用独立 `data_version` 写入，不先删除活动版本。
+- 新版本节点、关系和索引全部写入后再执行一致性校验。
+- 通过单一活动版本指针或等价机制完成切换。
+- 切换成功后再清理过期版本，并至少保留上一版备份。
+- 任何异常都不能破坏当前活动版本。
+- 增加导入中断、校验失败、切换失败和回滚测试。
+
+完成判定：人为制造新版本构建失败后，旧版本仍可查询，`/ready` 仍反映旧活动版本的真实状态。
+
+### 4.3 补齐菜谱比较
+
+当前查询路由能够识别 `recipe_comparison`，但检索协调器没有专用比较流程。普通 Neo4j 候选查询不能表达两道指定菜的差异。
+
+必须完成：
+
+- 只比较路由器识别出的两道菜，不返回无关 Top 5。
+- 返回共同和不同的食材、分类、方法、工具、难度和明确耗时。
+- 缺失字段显示“无法确认”，不推断为相同或不同。
+- 比较结果来自结构化数据，不依赖 LLM。
+- 增加服务层和 API 集成测试。
+
+完成判定：固定评测集中的比较查询返回两道指定菜及可验证的结构化差异。
+
+## 5. P1：真实集成与正确性收口
+
+### 5.1 运行时加载食材别名
+
+构建阶段会读取 `config/ingredient_aliases.json`，但运行时创建 `QueryRouter` 时还没有加载同一份别名表。必须保证“西红柿”和“番茄”等查询使用与构建阶段完全一致的规范化规则。
+
+### 5.2 修正主观词和硬条件语义
+
+“不辣”当前可能被简化为排除名为“辣”的食材，无法可靠覆盖辣椒、辣椒粉、豆瓣酱或规则推断标签。
+
+必须明确：
+
+- 明确食材排除使用规范化食材实体。
+- “辣”“清淡”“下饭”等主观表达默认只参与软排序。
+- 只有存在可靠结构化标签和证据时，才能将其用于硬过滤。
+- 字段缺失时必须标记无法验证。
+
+### 5.3 验证本地 HowToCook checkout
+
+本次浅克隆命令发生超时。当前目录能读取固定提交和 200 个目标文件，但 Git 工作区状态异常，正式构建前应重新获取一个干净的固定提交 checkout，并重新验证：
+
+```powershell
+git -C Data/source/howtocook rev-parse HEAD
+git -C Data/source/howtocook status --short
+```
+
+期望提交必须是：
+
+```text
+cbc524e28a88bf5ccc6e094004cfbeba1ea6fdf9
+```
+
+正式验收时不应使用状态异常的上游 checkout。
+
+### 5.4 运行完整本地构建
+
+必须在本机真实运行：
+
+- Neo4j Windows ZIP 发行版。
+- Ollama `qwen3.5:4b`。
+- Ollama `bge-m3`。
+- 200 道菜的 BM25、FAISS 和 Neo4j 联合构建。
+- 跨索引数量、ID 哈希、版本和向量维度校验。
+
+完成后 `/ready` 必须返回 200，并显示三套索引和两个 Ollama 模型均可用。
+
+### 5.5 固定评测集验收
+
+`evaluation/queries.jsonl` 已包含 50 条查询，但尚未在真实三路检索结果上跑出验收报告。
+
+必须验证：
+
+- 六类查询都有实际返回。
+- 菜名和别名查询 Top 1 准确率为 100%。
+- 固定评测集 Recall@5 不低于 90%。
+- 可靠硬条件违规结果为 0。
+- 无法验证的条件明确标记。
+
+### 5.6 性能验收
+
+尚未在当前机器的预热状态下获得有效性能报告。
+
+必须分别测量：
+
+- 冷启动耗时。
+- 推荐列表 P50、P95。
+- 详细回答首字 P50、P95。
+- 路由、BM25、Neo4j、Embedding、FAISS、过滤、RRF 和序列化分阶段耗时。
+
+目标仍为：
+
+- 预热推荐列表 P95 不超过 1 秒。
+- 预热详细回答首字 P95 不超过 3 秒。
+
+未获得真实报告前不得声明达标。
+
+## 6. P2：工程收口
+
+- 安装并运行 Ruff；本次尝试安装时网络超时，静态检查尚无通过证据。
+- 处理 FastAPI TestClient 的兼容层弃用警告。
+- 增加真实 Neo4j 和 Ollama 集成测试的可选标记与运行说明。
+- 检查 `config/recipe-selection.txt` 与正式 `config/recipe-selection-mvp.txt` 的职责，删除或明确废弃空清单，避免误用。
+- 检查构建报告是否只记录安全的异常类型和文件路径，不记录凭据或请求头。
+- 为索引版本切换、回滚和清理增加运维日志及恢复步骤。
+
+## 7. 当前工作区阻塞
+
+### 7.1 Git 元数据无效
+
+当前目录执行 Git 检查返回：
+
+```text
+NOT_A_GIT_REPOSITORY
+```
+
+虽然存在 `.git` 目录，但它不能被 Git 识别为有效仓库。因此当前无法可靠查看差异、创建分支、提交或恢复历史。
+
+### 7.2 结构化补丁无法更新已有文件
+
+当前环境可以新增文件，但更新或删除已有文件时，结构化补丁工具持续返回：
+
+```text
+windows sandbox: helper_unknown_error: setup refresh had errors
+```
+
+未使用 PowerShell/Python 直接重写已有源码来绕过该保护。继续修改前，应先恢复有效 Git checkout 或修复当前 workspace 的沙箱状态。
+
+## 8. 推荐继续顺序
+
+1. 恢复有效 Git checkout，并确认现有文件没有被覆盖。
+2. 重新运行 49 项基线测试。
+3. 将 NumPy 稠密索引替换为真实 FAISS，并先完成红绿测试。
+4. 将 Neo4j 构建改为版本化写入、验证后切换和失败回滚。
+5. 实现结构化菜谱比较。
+6. 补齐运行时别名与硬条件语义。
+7. 重新获取干净的 HowToCook 固定提交。
+8. 启动本地 Neo4j 与 Ollama，完成 200 道真实构建。
+9. 运行 50 条固定评测和性能基准。
+10. 运行全量测试、Ruff、敏感信息扫描和 HTTP/Web UI 冒烟。
+
+每一步只修改直接相关文件，不顺手重构无关模块。
+
+## 9. 最终完成判定
+
+只有同时满足以下条件，才可以将 CookQA MVP 标记为完成：
+
+- [ ] 使用真实 FAISS 菜谱级索引。
+- [ ] Neo4j 新版本构建失败不会破坏旧活动版本。
+- [ ] 六类查询均有服务层和 API 层可验证行为。
+- [ ] 200 道菜完成 BM25、FAISS、Neo4j 联合构建。
+- [ ] `/ready` 在完整本地环境返回 200。
+- [ ] 菜名及别名查询 Top 1 准确率为 100%。
+- [ ] 固定评测集 Recall@5 不低于 90%。
+- [ ] 可靠硬条件违规结果为 0。
+- [ ] 推荐列表预热 P95 不超过 1 秒。
+- [ ] 详细回答首字预热 P95 不超过 3 秒。
+- [ ] 全量自动化测试通过。
+- [ ] Ruff 静态检查通过。
+- [ ] 敏感信息扫描无命中。
+- [ ] Git 工作区状态可审计，所有改动均可查看和提交。
+

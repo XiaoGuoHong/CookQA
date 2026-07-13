@@ -1,9 +1,8 @@
+.env
+.pytest_cache/
+.ruff_cache/
+.tmp/
 __pycache__/
 *.py[cod]
-.pytest_cache/
-.tmp/
-.tmp-data/
-data/
+Data/
 logs/
-*.faiss
-*.payload.json

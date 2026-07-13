@@ -1,54 +1,42 @@
-from pathlib import Path
+import asyncio
 
-import pytest
-
-from cookqa.config import CookQASettings
-from cookqa.service import CookQAService
-
-
-FIXTURE_ROOT = Path(__file__).parent / "fixtures" / "howtocook"
+from cookqa.models import Ingredient, QueryPlan, Recipe, SearchResult
+from cookqa.retrieval.coordinator import RetrievalOutcome
+from cookqa.service import SearchService
 
 
-def settings_for(tmp_path):
-    return CookQASettings(
-        project_root=tmp_path,
-        data_dir=tmp_path / "data",
-        howtocook_path=FIXTURE_ROOT,
-        ollama_base_url="http://127.0.0.1:11434",
-        embedding_model="bge-m3",
-        chat_model="gpt-oss:120b-cloud",
-        ollama_timeout=600.0,
-        ollama_embed_batch_size=1,
-        top_k=5,
-        min_score=0.15,
-        enable_rebuild_api=True,
-    )
+class FakeRouter:
+    def route(self, query):
+        return QueryPlan(
+            original_query=query,
+            normalized_query=query,
+            intent="semantic_recommendation",
+            retrieval_strategy=["bm25"],
+            confidence=0.5,
+        )
 
 
-def test_service_rebuild_writes_metadata_without_live_ollama(tmp_path):
-    service = CookQAService.from_settings(settings_for(tmp_path), ollama_client=None)
-
-    result = service.rebuild_metadata()
-
-    assert result["recipes"] == 2
-    assert (tmp_path / "data" / "parsed" / "recipes.json").exists()
-    assert (tmp_path / "data" / "graph" / "relations.json").exists()
-
-
-def test_service_chat_returns_answer_and_sources(tmp_path):
-    service = CookQAService.from_settings(settings_for(tmp_path), ollama_client=None)
-    service.rebuild_metadata()
-
-    result = service.chat("番茄炒蛋怎么做", top_k=3, include_steps=True)
-
-    assert result.mode == "dish_lookup"
-    assert result.recommendations[0].name == "西红柿炒鸡蛋"
-    assert result.sources[0].name == "西红柿炒鸡蛋"
+class FakeCoordinator:
+    async def search(self, plan, limit=5):
+        recipe = Recipe(
+            recipe_id="r1",
+            name="番茄炒蛋",
+            ingredients=[Ingredient(name="番茄", raw="番茄")],
+            source_path="dishes/tomato.md",
+            source_version="abc",
+        )
+        return RetrievalOutcome(
+            results=[SearchResult(recipe=recipe, score=1, retrieval_sources=["bm25"])],
+            strategy=["bm25"],
+            timings_ms={"bm25": 1.5},
+        )
 
 
-def test_get_recipe_raises_key_error_for_unknown_recipe(tmp_path):
-    service = CookQAService.from_settings(settings_for(tmp_path), ollama_client=None)
-    service.rebuild_metadata()
+def test_search_service_returns_structured_response():
+    service = SearchService(FakeRouter(), FakeCoordinator(), recipes={})
 
-    with pytest.raises(KeyError):
-        service.get_recipe("missing.md")
+    response = asyncio.run(service.search("家常菜"))
+
+    assert response.results[0].recipe.name == "番茄炒蛋"
+    assert response.retrieval_strategy == ["bm25"]
+    assert response.timings_ms["bm25"] == 1.5

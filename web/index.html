@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="CookQA 本地中文菜谱 Graph RAG">
+    <title>CookQA · 本地菜谱问答</title>
+    <link rel="stylesheet" href="/static/styles.css">
+  </head>
+  <body>
+    <header class="hero">
+      <div class="hero__inner">
+        <p class="eyebrow">LOCAL GRAPH RAG</p>
+        <h1>今天，想做点什么？</h1>
+        <p class="subtitle">从本地 HowToCook 菜谱中查食材、找做法、筛条件。推荐不等待大模型。</p>
+        <form id="search-form" class="search" role="search">
+          <label class="sr-only" for="query-input">输入菜谱问题</label>
+          <input
+            id="query-input"
+            name="query"
+            type="search"
+            maxlength="500"
+            autocomplete="off"
+            placeholder="例如：推荐 20 分钟内、不辣的鸡肉菜"
+            required
+          >
+          <button id="search-button" type="submit">查菜谱</button>
+        </form>
+        <div class="examples" aria-label="示例问题">
+          <button type="button" data-query="宫保鸡丁怎么做">宫保鸡丁怎么做</button>
+          <button type="button" data-query="鸡蛋和番茄能做什么">鸡蛋和番茄能做什么</button>
+          <button type="button" data-query="想吃清淡又下饭的菜">清淡又下饭</button>
+        </div>
+      </div>
+    </header>
+
+    <main class="workspace">
+      <section aria-labelledby="results-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">TOP 5</p>
+            <h2 id="results-title">检索结果</h2>
+          </div>
+          <p id="status" class="status" aria-live="polite">输入问题开始检索。</p>
+        </div>
+        <aside id="degradation" class="notice" hidden></aside>
+        <div id="results" class="results" aria-live="polite"></div>
+      </section>
+
+      <aside id="detail-panel" class="detail" aria-labelledby="detail-title" hidden>
+        <button id="close-detail" class="detail__close" type="button" aria-label="关闭菜谱详情">×</button>
+        <p class="eyebrow">RECIPE DETAIL</p>
+        <h2 id="detail-title">菜谱详情</h2>
+        <div id="detail-content"></div>
+        <div class="answer-box">
+          <label for="answer-question">需要自然语言说明时再调用本地模型</label>
+          <div class="answer-box__controls">
+            <input id="answer-question" maxlength="500" placeholder="可选：例如有哪些容易出错的地方？">
+            <button id="answer-button" type="button">生成说明</button>
+          </div>
+          <pre id="answer-output" aria-live="polite"></pre>
+        </div>
+      </aside>
+    </main>
+
+    <template id="recipe-card-template">
+      <article class="recipe-card">
+        <button class="recipe-card__button" type="button">
+          <div class="recipe-card__topline">
+            <span class="recipe-card__category"></span>
+            <span class="recipe-card__score"></span>
+          </div>
+          <h3 class="recipe-card__name"></h3>
+          <p class="recipe-card__meta"></p>
+          <p class="recipe-card__ingredients"></p>
+          <div class="recipe-card__reasons"></div>
+          <p class="recipe-card__source"></p>
+          <p class="recipe-card__verification"></p>
+        </button>
+      </article>
+    </template>
+
+    <script src="/static/app.js" defer></script>
+  </body>
+</html>
