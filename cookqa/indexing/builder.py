@@ -10,12 +10,12 @@ from typing import Protocol
 
 import numpy as np
 
+from cookqa.indexing.manifest import IndexManifest, compute_id_hash, validate_manifest
 from cookqa.ingest.parser import parse_recipe
 from cookqa.ingest.selection import load_selection, validate_selection
-from cookqa.indexing.manifest import IndexManifest, compute_id_hash, validate_manifest
 from cookqa.models import Recipe
 from cookqa.retrieval.bm25 import BM25Retriever, recipe_document
-from cookqa.retrieval.faiss_store import ExactVectorIndex
+from cookqa.retrieval.faiss_store import FaissVectorIndex
 from cookqa.retrieval.ports import Embedder
 
 
@@ -76,8 +76,11 @@ class BuildPipeline:
                 [await self.embedder.embed(recipe_document(recipe)) for recipe in recipes],
                 dtype=np.float32,
             )
-            vector_index = ExactVectorIndex.build(recipe_ids, vectors)
-            vector_index.save(staging_dir / "faiss.npz")
+            vector_index = FaissVectorIndex.build(recipe_ids, vectors)
+            vector_index.save(
+                staging_dir / "faiss.index",
+                staging_dir / "faiss.ids.json",
+            )
 
             graph_ids = await self.graph_writer.replace_recipes(recipes, data_version)
             manifest = IndexManifest(

@@ -12,7 +12,7 @@ from cookqa.models import ComponentStatus, ReadinessReport, Recipe
 from cookqa.query.router import QueryRouter
 from cookqa.retrieval.bm25 import BM25Retriever
 from cookqa.retrieval.coordinator import RetrievalCoordinator
-from cookqa.retrieval.faiss_store import ExactVectorIndex, FaissRetriever
+from cookqa.retrieval.faiss_store import FaissRetriever, FaissVectorIndex
 from cookqa.retrieval.neo4j_store import Neo4jRetriever
 from cookqa.service import SearchService
 
@@ -33,7 +33,7 @@ class RuntimeReadiness:
         self,
         manifest: IndexManifest | None,
         bm25: BM25Retriever | None,
-        vector_index: ExactVectorIndex | None,
+        vector_index: FaissVectorIndex | None,
         neo4j_driver: Any | None,
         ollama: OllamaClient,
         load_error: str | None = None,
@@ -49,7 +49,8 @@ class RuntimeReadiness:
         if self.neo4j_driver is None or self.manifest is None:
             return set(), "Neo4j 未配置或不可用"
         records, _, _ = self.neo4j_driver.execute_query(
-            "MATCH (recipe:Recipe {data_version: $data_version}) RETURN recipe.recipe_id AS recipe_id",
+            "MATCH (recipe:Recipe {data_version: $data_version}) "
+            "RETURN recipe.recipe_id AS recipe_id",
             data_version=self.manifest.data_version,
         )
         return {record["recipe_id"] for record in records}, None
@@ -107,12 +108,17 @@ def _load_recipes(path: Path) -> dict[str, Recipe]:
 def build_runtime(settings: Settings):
     ollama = OllamaClient(settings)
     try:
-        active = json.loads((settings.data_dir / "runtime" / "active.json").read_text(encoding="utf-8"))
+        active = json.loads(
+            (settings.data_dir / "runtime" / "active.json").read_text(encoding="utf-8")
+        )
         artifact_dir = settings.data_dir / "indexes" / active["version"]
         manifest = IndexManifest.load(artifact_dir / "index-manifest.json")
         recipes = _load_recipes(artifact_dir / "recipes.jsonl")
         bm25 = BM25Retriever.load(artifact_dir / "bm25.json")
-        vector_index = ExactVectorIndex.load(artifact_dir / "faiss.npz")
+        vector_index = FaissVectorIndex.load(
+            artifact_dir / "faiss.index",
+            artifact_dir / "faiss.ids.json",
+        )
 
         driver = None
         if settings.neo4j_password:
