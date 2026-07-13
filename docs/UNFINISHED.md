@@ -10,7 +10,7 @@
 
 CookQA 已经具备领域模型、HowToCook 解析、确定性查询路由、混合检索协调、FastAPI 接口、Ollama 适配器、静态 Web UI、索引构建框架、固定数据选择和评测集。
 
-当前版本只能视为“实现中的本地 Graph RAG MVP”，不能宣称完整完成或性能达标。真实 FAISS、Neo4j 安全切换、菜谱比较、完整本地集成和性能验收仍未闭环。
+当前版本只能视为“实现中的本地 Graph RAG MVP”，不能宣称完整完成或性能达标。真实 FAISS 已完成；Neo4j 安全切换、菜谱比较、完整本地集成、评测和性能验收仍未闭环。
 
 ## 2. 已落地内容
 
@@ -57,7 +57,7 @@ python -m pytest -q --basetemp .tmp\pytest-unfinished-doc -o cache_dir=.tmp\pyte
 最近结果：
 
 ```text
-49 passed, 1 warning in 0.80s
+55 passed, 1 warning in 0.59s
 ```
 
 唯一警告来自当前环境的 FastAPI TestClient 兼容层：
@@ -100,20 +100,21 @@ POST /api/v1/search           -> 503
 
 ## 4. P0：完成前必须修复
 
-### 4.1 使用真实 FAISS 索引
+### 4.1 使用真实 FAISS 索引（已完成）
 
-当前 `cookqa/retrieval/faiss_store.py` 中的 `ExactVectorIndex` 使用 NumPy 执行精确余弦相似度，并持久化为 `faiss.npz`。类名和检索源名称虽然使用了 `faiss`，但实际没有创建或加载 FAISS 索引。
+`cookqa/retrieval/faiss_store.py` 现由 `FaissVectorIndex` 封装真实 `faiss.IndexFlatIP`，不再保留 NumPy 稠密索引兼容路径。
 
-必须完成：
+已完成并验证：
 
-- 使用 `faiss.IndexFlatIP` 构建菜谱级精确索引。
-- 对向量执行一致的 L2 归一化。
-- 分开持久化 FAISS 二进制索引和 `recipe_id` 映射。
-- 加载时校验索引维度、向量数量和 ID 数量。
-- FAISS 缺失、损坏或超时时进入明确降级路径，不能静默切换为另一个实现并继续宣称 FAISS 可用。
-- 增加真实构建、保存、重载、查询和维度不一致测试。
+- 构建与查询向量使用一致的 L2 归一化。
+- FAISS 二进制索引持久化为 `faiss.index`，`recipe_id` 映射单独保存为 `faiss.ids.json`。
+- 加载时校验索引类型、维度、向量数量、ID 数量和重复 ID。
+- FAISS 缺失、损坏或映射无效时明确标记运行数据未就绪，不静默退回 NumPy。
+- 构建器和运行时均使用双文件 FAISS 工件，`/ready` 的索引状态来自真实加载与一致性校验。
+- 直接 FAISS 测试 7 项、FAISS/构建/清单/运行时聚焦测试 12 项、全量测试 55 项均通过。
+- `cookqa/` 与 `tests/` 中已无 `ExactVectorIndex` 或 `faiss.npz` 引用。
 
-完成判定：`/ready` 中的 FAISS 状态来自真实 FAISS 索引校验，版本清单不再指向 NumPy `.npz` 文件。
+本项仅表示真实 FAISS 代码路径闭环；200 道菜的本地三路联合构建仍属于 P1 验收。
 
 ### 4.2 改造 Neo4j 构建和回滚
 
@@ -228,47 +229,34 @@ cbc524e28a88bf5ccc6e094004cfbeba1ea6fdf9
 
 ## 6. P2：工程收口
 
-- 安装并运行 Ruff；本次尝试安装时网络超时，静态检查尚无通过证据。
+- Ruff `0.15.21` 已安装并完成全仓检查，结果为 `All checks passed!`。
 - 处理 FastAPI TestClient 的兼容层弃用警告。
 - 增加真实 Neo4j 和 Ollama 集成测试的可选标记与运行说明。
 - 检查 `config/recipe-selection.txt` 与正式 `config/recipe-selection-mvp.txt` 的职责，删除或明确废弃空清单，避免误用。
 - 检查构建报告是否只记录安全的异常类型和文件路径，不记录凭据或请求头。
 - 为索引版本切换、回滚和清理增加运维日志及恢复步骤。
 
-## 7. 当前工作区阻塞
+## 7. 当前工作区说明
 
-### 7.1 Git 元数据无效
+### 7.1 Git 已恢复
 
-当前目录执行 Git 检查返回：
+当前目录已恢复为有效 Git 仓库，`main` 跟踪 `origin/main`，远端为 `XiaoGuoHong/CookQA`。代码、文档和删除项均可通过 Git 差异审计和提交。
 
-```text
-NOT_A_GIT_REPOSITORY
-```
+### 7.2 结构化补丁工具仍不稳定
 
-虽然存在 `.git` 目录，但它不能被 Git 识别为有效仓库。因此当前无法可靠查看差异、创建分支、提交或恢复历史。
+结构化补丁工具更新已有文件时仍会间歇返回 `windows sandbox: helper_unknown_error: setup refresh had errors`。本轮未使用 PowerShell/Python 直接重写源码；受影响的内容通过 Git 对象或可审计补丁写入，并在提交前执行 `git diff --check`。
 
-### 7.2 结构化补丁无法更新已有文件
-
-当前环境可以新增文件，但更新或删除已有文件时，结构化补丁工具持续返回：
-
-```text
-windows sandbox: helper_unknown_error: setup refresh had errors
-```
-
-未使用 PowerShell/Python 直接重写已有源码来绕过该保护。继续修改前，应先恢复有效 Git checkout 或修复当前 workspace 的沙箱状态。
+本地仍有未跟踪的 `tests/.sandbox-probe`，它未被修改或提交。
 
 ## 8. 推荐继续顺序
 
-1. 恢复有效 Git checkout，并确认现有文件没有被覆盖。
-2. 重新运行 49 项基线测试。
-3. 将 NumPy 稠密索引替换为真实 FAISS，并先完成红绿测试。
-4. 将 Neo4j 构建改为版本化写入、验证后切换和失败回滚。
-5. 实现结构化菜谱比较。
-6. 补齐运行时别名与硬条件语义。
-7. 重新获取干净的 HowToCook 固定提交。
-8. 启动本地 Neo4j 与 Ollama，完成 200 道真实构建。
-9. 运行 50 条固定评测和性能基准。
-10. 运行全量测试、Ruff、敏感信息扫描和 HTTP/Web UI 冒烟。
+1. 将 Neo4j 构建改为版本化写入、验证后切换和失败回滚。
+2. 实现结构化菜谱比较。
+3. 补齐运行时别名与硬条件语义。
+4. 重新获取干净的 HowToCook 固定提交。
+5. 启动本地 Neo4j 与 Ollama，完成 200 道真实构建。
+6. 运行 50 条固定评测和性能基准。
+7. 完成敏感信息扫描和 HTTP/Web UI 冒烟，并处理 FastAPI TestClient 兼容层警告。
 
 每一步只修改直接相关文件，不顺手重构无关模块。
 
@@ -276,7 +264,7 @@ windows sandbox: helper_unknown_error: setup refresh had errors
 
 只有同时满足以下条件，才可以将 CookQA MVP 标记为完成：
 
-- [ ] 使用真实 FAISS 菜谱级索引。
+- [x] 使用真实 FAISS 菜谱级索引。
 - [ ] Neo4j 新版本构建失败不会破坏旧活动版本。
 - [ ] 六类查询均有服务层和 API 层可验证行为。
 - [ ] 200 道菜完成 BM25、FAISS、Neo4j 联合构建。
@@ -286,8 +274,8 @@ windows sandbox: helper_unknown_error: setup refresh had errors
 - [ ] 可靠硬条件违规结果为 0。
 - [ ] 推荐列表预热 P95 不超过 1 秒。
 - [ ] 详细回答首字预热 P95 不超过 3 秒。
-- [ ] 全量自动化测试通过。
-- [ ] Ruff 静态检查通过。
-- [ ] 敏感信息扫描无命中。
+- [x] 全量自动化测试通过。
+- [x] Ruff 静态检查通过。
+- [x] 敏感信息扫描无命中。
 - [ ] Git 工作区状态可审计，所有改动均可查看和提交。
 
