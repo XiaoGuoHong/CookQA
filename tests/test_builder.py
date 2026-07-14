@@ -18,15 +18,26 @@ class FakeGraphWriter:
     def __init__(self):
         self.ids = set()
 
-    async def replace_recipes(self, recipes, data_version):
+    async def write_version(self, recipes, data_version):
         self.ids = {recipe.recipe_id for recipe in recipes}
-        return self.ids
+
+    async def validate_version(self, recipes, data_version):
+        return set(self.ids)
+
+    async def delete_version(self, data_version):
+        self.ids.clear()
+
+    async def cleanup_versions(self, keep_versions):
+        return None
 
 
 def test_builder_activates_only_validated_artifacts(tmp_path):
     source = tmp_path / "source"
     source.mkdir()
-    (source / "sample.md").write_text(FIXTURE.read_text(encoding="utf-8"), encoding="utf-8")
+    (source / "sample.md").write_text(
+        FIXTURE.read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
     selection = tmp_path / "selection.txt"
     selection.write_text("sample.md\n", encoding="utf-8")
     aliases = tmp_path / "aliases.json"
@@ -45,7 +56,9 @@ def test_builder_activates_only_validated_artifacts(tmp_path):
         )
     )
 
-    active = json.loads((data_dir / "runtime" / "active.json").read_text(encoding="utf-8"))
+    active = json.loads(
+        (data_dir / "runtime" / "active.json").read_text(encoding="utf-8")
+    )
     index_path = result.artifact_dir / "faiss.index"
     ids_path = result.artifact_dir / "faiss.ids.json"
     assert active["version"] == result.manifest.data_version
