@@ -5,6 +5,33 @@ from dataclasses import dataclass, field
 
 from cookqa.models import QueryConstraints, Recipe
 
+_SPICY_MARKERS = (
+    "\u8fa3\u6912",
+    "\u8fa3\u6912\u7c89",
+    "\u8fa3\u9171",
+    "\u8c46\u74e3\u9171",
+    "\u706b\u9505\u5e95\u6599",
+)
+_INGREDIENT_EQUIVALENTS = {
+    "\u732a\u8089": ("\u732a\u8089", "\u4e94\u82b1\u8089"),
+    "\u867e": ("\u867e", "\u5927\u867e", "\u867e\u4ec1", "\u7f57\u6c0f\u867e"),
+    "\u7c73\u996d": ("\u7c73\u996d", "\u996d"),
+}
+
+
+def recipe_has_label(recipe: Recipe | dict, label: str) -> bool:
+    if label != "spicy":
+        return False
+    ingredients = (
+        recipe.ingredients if isinstance(recipe, Recipe) else recipe.get("ingredients", [])
+    )
+    values = [
+        ingredient.name if isinstance(ingredient, dict) is False else ingredient.get("name", "")
+        for ingredient in ingredients
+    ]
+    values.extend(recipe.tags if isinstance(recipe, Recipe) else recipe.get("tags", []))
+    return any(marker in value for value in values for marker in _SPICY_MARKERS)
+
 
 @dataclass(slots=True)
 class FusedCandidate:
@@ -39,20 +66,41 @@ def satisfies_hard_filters(
     constraints: QueryConstraints,
 ) -> bool:
     ingredient_names = {ingredient.name.casefold() for ingredient in recipe.ingredients}
-    if any(item.casefold() not in ingredient_names for item in required_ingredients):
+    searchable = ingredient_names | {recipe.name.casefold()}
+
+    def matches(item: str) -> bool:
+        candidates = _INGREDIENT_EQUIVALENTS.get(item, (item,))
+        return any(
+            candidate.casefold() in value for candidate in candidates for value in searchable
+        )
+
+    if any(not recipe_has_label(recipe, label) for label in constraints.required_labels):
         return False
-    if any(item.casefold() in ingredient_names for item in excluded_ingredients):
+    if any(recipe_has_label(recipe, label) for label in constraints.excluded_labels):
+        return False
+    if any(not matches(item) for item in required_ingredients):
+        return False
+    if any(matches(item) for item in excluded_ingredients):
         return False
     if constraints.max_minutes is not None and (
         recipe.duration_minutes is None or recipe.duration_minutes > constraints.max_minutes
     ):
         return False
-    if constraints.categories and (
-        not recipe.categories or not set(constraints.categories).intersection(recipe.categories)
+    if constraints.categories:
+        category_values = {value.casefold() for value in recipe.categories}
+        source_path = recipe.source_path.casefold()
+        if not any(
+            value.casefold() in category_values or f"/{value.casefold()}/" in f"/{source_path}"
+            for value in constraints.categories
+        ):
+            return False
+    recipe_search = recipe.name.casefold() + " " + " ".join(recipe.tools).casefold()
+    if constraints.tools and any(
+        tool.casefold() not in recipe_search for tool in constraints.tools
     ):
         return False
-    if constraints.tools and (
-        not recipe.tools or not set(constraints.tools).issubset(recipe.tools)
+    if constraints.excluded_tools and any(
+        tool.casefold() in recipe_search for tool in constraints.excluded_tools
     ):
         return False
     return not (

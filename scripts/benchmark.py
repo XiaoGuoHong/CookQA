@@ -10,6 +10,7 @@ from pathlib import Path
 import httpx
 
 from cookqa.ingest.normalize import stable_recipe_id
+from cookqa.retrieval.fusion import recipe_has_label
 
 
 def percentile(values: list[float], percentile_value: float) -> float | None:
@@ -18,6 +19,14 @@ def percentile(values: list[float], percentile_value: float) -> float | None:
     ordered = sorted(values)
     index = max(0, math.ceil(percentile_value / 100 * len(ordered)) - 1)
     return ordered[index]
+
+
+def summarize_latencies(values: list[float]) -> dict[str, float | int | None]:
+    return {
+        "count": len(values),
+        "p50_ms": percentile(values, 50),
+        "p95_ms": percentile(values, 95),
+    }
 
 
 def load_cases(path: Path) -> list[dict]:
@@ -31,15 +40,53 @@ def expected_ids(case: dict) -> set[str]:
 
 
 def violates_constraints(recipe: dict, constraints: dict) -> bool:
-    ingredients = {item["name"] for item in recipe.get("ingredients", [])}
-    tools = set(recipe.get("tools") or [])
-    if any(item not in ingredients for item in constraints.get("required_ingredients", [])):
+    ingredients = {item["name"].casefold() for item in recipe.get("ingredients", [])}
+    searchable = ingredients | {str(recipe.get("name", "")).casefold()}
+    equivalents = {
+        "\u732a\u8089": ("\u732a\u8089", "\u4e94\u82b1\u8089"),
+        "\u867e": ("\u867e", "\u5927\u867e", "\u867e\u4ec1", "\u7f57\u6c0f\u867e"),
+        "\u7c73\u996d": ("\u7c73\u996d", "\u996d"),
+    }
+
+    def matches(item: str) -> bool:
+        return any(
+            candidate.casefold() in value
+            for candidate in equivalents.get(item, (item,))
+            for value in searchable
+        )
+
+    if any(not matches(item) for item in constraints.get("required_ingredients", [])):
         return True
-    if any(item in ingredients for item in constraints.get("excluded_ingredients", [])):
+    if any(matches(item) for item in constraints.get("excluded_ingredients", [])):
         return True
-    if any(item in tools for item in constraints.get("excluded_tools", [])):
+    tools = {str(item).casefold() for item in recipe.get("tools") or []}
+    name = str(recipe.get("name", "")).casefold()
+    if any(
+        item.casefold() in tools or item.casefold() in name
+        for item in constraints.get("excluded_tools", [])
+    ):
         return True
-    if any(item not in tools for item in constraints.get("tools", [])):
+    if any(
+        item.casefold() not in tools and item.casefold() not in name
+        for item in constraints.get("tools", [])
+    ):
+        return True
+    category = constraints.get("category")
+    if category:
+        categories = {str(item).casefold() for item in recipe.get("categories") or []}
+        source_path = str(recipe.get("source_path", "")).casefold()
+        if (
+            category.casefold() not in categories
+            and f"/{category.casefold()}/" not in f"/{source_path}"
+        ):
+            return True
+    if "\u8fa3" in constraints.get("excluded_ingredients", []) and recipe_has_label(
+        recipe, "spicy"
+    ):
+        return True
+    if "\u8fa3" in constraints.get("required_ingredients", []) and not recipe_has_label(
+        recipe, "spicy"
+    ):
         return True
     max_minutes = constraints.get("max_minutes")
     duration = recipe.get("duration_minutes")
@@ -84,40 +131,69 @@ def run(base_url: str, cases_path: Path, warmups: int, timeout: float) -> dict:
             ),
             None,
         )
+        warmup_detail_failures = 0
+        detail_failures = 0
         if detail_candidate is not None:
             recipe_id = detail_candidate.json()["results"][0]["recipe"]["recipe_id"]
+            for _ in range(2):
+                try:
+                    with client.stream(
+                        "POST",
+                        f"/api/v1/recipes/{recipe_id}/answer/stream",
+                        json={"question": "\u8bf7\u7b80\u8981\u8bf4\u660e\u505a\u6cd5"},
+                    ) as response:
+                        if response.status_code != 200:
+                            warmup_detail_failures += 1
+                            continue
+                        next(response.iter_text(), "")
+                except httpx.HTTPError:
+                    warmup_detail_failures += 1
             for _ in range(5):
                 started = time.perf_counter()
-                with client.stream(
-                    "POST",
-                    f"/api/v1/recipes/{recipe_id}/answer/stream",
-                    json={"question": "请简要说明做法"},
-                ) as response:
-                    if response.status_code != 200:
-                        break
-                    first_chunk = next(response.iter_text(), "")
-                    if first_chunk:
-                        first_token_samples.append((time.perf_counter() - started) * 1000)
+                try:
+                    with client.stream(
+                        "POST",
+                        f"/api/v1/recipes/{recipe_id}/answer/stream",
+                        json={"question": "\u8bf7\u7b80\u8981\u8bf4\u660e\u505a\u6cd5"},
+                    ) as response:
+                        if response.status_code != 200:
+                            detail_failures += 1
+                            continue
+                        first_chunk = next(response.iter_text(), "")
+                        if first_chunk:
+                            first_token_samples.append((time.perf_counter() - started) * 1000)
+                        else:
+                            detail_failures += 1
+                except httpx.HTTPError:
+                    detail_failures += 1
 
     evaluated = len(cases) - len(failures)
-    search_p95 = percentile(search_samples, 95)
-    first_token_p95 = percentile(first_token_samples, 95)
+    search_summary = summarize_latencies(search_samples)
+    first_token_summary = summarize_latencies(first_token_samples)
     return {
         "case_count": len(cases),
         "evaluated_count": evaluated,
         "recall_at_5": hits / evaluated if evaluated else None,
         "hard_filter_violations": hard_filter_violations,
-        "search_p95_ms": search_p95,
+        "search_samples": search_summary,
+        "first_token_samples": first_token_summary,
+        "search_p50_ms": search_summary["p50_ms"],
+        "search_p95_ms": search_summary["p95_ms"],
         "search_mean_ms": statistics.fmean(search_samples) if search_samples else None,
-        "first_token_p95_ms": first_token_p95,
+        "first_token_p50_ms": first_token_summary["p50_ms"],
+        "first_token_p95_ms": first_token_summary["p95_ms"],
+        "warmup_detail_failures": warmup_detail_failures if detail_candidate is not None else 0,
+        "detail_failures": detail_failures if detail_candidate is not None else 0,
         "cold_start_ms": None,
         "targets": {
             "recall_at_5_ge_0_90": evaluated == len(cases) and hits / evaluated >= 0.9
             if evaluated
             else False,
             "hard_filter_violations_eq_0": hard_filter_violations == 0,
-            "search_p95_le_1000_ms": search_p95 is not None and search_p95 <= 1000,
-            "first_token_p95_le_3000_ms": first_token_p95 is not None and first_token_p95 <= 3000,
+            "search_p95_le_1000_ms": search_summary["p95_ms"] is not None
+            and search_summary["p95_ms"] <= 1000,
+            "first_token_p95_le_3000_ms": first_token_summary["p95_ms"] is not None
+            and first_token_summary["p95_ms"] <= 3000,
         },
         "failures": failures,
     }

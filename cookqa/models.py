@@ -85,15 +85,21 @@ class QueryConstraints(BaseModel):
     max_minutes: int | None = Field(default=None, gt=0)
     categories: list[str] = Field(default_factory=list)
     tools: list[str] = Field(default_factory=list)
+    excluded_tools: list[str] = Field(default_factory=list)
     difficulties: list[str] = Field(default_factory=list)
     subjective_tags: list[str] = Field(default_factory=list)
+    required_labels: list[str] = Field(default_factory=list)
+    excluded_labels: list[str] = Field(default_factory=list)
 
     def has_hard_filters(self) -> bool:
         return bool(
             self.max_minutes is not None
             or self.categories
             or self.tools
+            or self.excluded_tools
             or self.difficulties
+            or self.required_labels
+            or self.excluded_labels
         )
 
 

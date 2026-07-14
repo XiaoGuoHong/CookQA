@@ -1,63 +1,65 @@
 # CookQA 未完成事项
 
 - 更新日期：2026-07-14
-- 当前状态：P0 代码与自动化验收已闭环；P1 真实本地集成、评测和性能验收尚未完成
+- 当前状态：P0、P1 已完成；P2 工程收口尚未完成
 - 目标平台：Windows 本机
 - 设计基线：[`docs/superpowers/specs/2026-07-13-cookqa-graph-rag-design.md`](superpowers/specs/2026-07-13-cookqa-graph-rag-design.md)
-- 实施计划：[`docs/superpowers/plans/2026-07-13-cookqa-graph-rag-implementation.md`](superpowers/plans/2026-07-13-cookqa-graph-rag-implementation.md)
+- P1 计划：[`docs/superpowers/plans/2026-07-14-cookqa-p1-acceptance-implementation.md`](superpowers/plans/2026-07-14-cookqa-p1-acceptance-implementation.md)
 
 ## 1. 当前结论
 
-CookQA 已经具备领域模型、HowToCook 解析、确定性查询路由、混合检索协调、FastAPI 接口、Ollama 适配器、静态 Web UI、索引构建框架、固定数据选择和评测集。
+CookQA 已在真实本地 Neo4j Windows 服务、Ollama 与固定 200 道菜索引上完成 P1 验收。当前可以称为“完成 P1 验收的本地 Graph RAG MVP”，但仍不应描述为已经完成生产部署、长期运维或全量质量评估的平台。
 
-当前版本已完成 P0 的真实 FAISS、Neo4j 安全版本切换与回滚、六类查询服务/API 行为和结构化菜谱比较。由于 200 道菜真实联合构建、固定评测集和性能验收仍未闭环，暂不能宣称完整 MVP 或性能达标。
+固定数据源已核验：
 
-## 2. 已落地内容
+```text
+HowToCook HEAD: cbc524e28a88bf5ccc6e094004cfbeba1ea6fdf9
+HowToCook status --short: empty
+Active recipe count: 200
+Embedding model: bge-m3:latest
+Embedding dimension: 1024
+Neo4j Windows service: Running / Automatic
+```
 
-### 2.1 数据与领域层
+## 2. P1 已完成内容
 
-- Pydantic 菜谱、食材、查询计划、搜索结果和就绪状态模型。
-- 根据源文件相对路径生成稳定 `recipe_id`。
-- HowToCook Markdown 确定性解析和食材别名规范化。
-- 固定上游提交：`cbc524e28a88bf5ccc6e094004cfbeba1ea6fdf9`。
-- 固定 200 道菜选择清单，排除了饮料、调酒、单独酱料、甜点、半成品和模板。
+### 2.1 运行时语义
 
-### 2.2 查询与检索层
+- 运行时与构建阶段读取同一份 `config/ingredient_aliases.json`。
+- “不辣/辣味”等表达使用结构化标签约束，不再伪装成名为“辣”的普通食材。
+- “不用某食材”可解析为排除条件。
+- 相似菜谱中的参考菜名不再被误解析成必需食材。
+- “简单”等缺乏可靠元数据的词不会成为硬难度过滤。
+- “凉菜”查询会扩展为菜谱中常见的“凉拌”命名词，但不改变原始问题和硬约束。
 
-- 六类查询意图的规则路由。
-- BM25 稀疏召回。
-- 菜谱级精确余弦稠密召回框架。
-- RRF 排名融合。
-- 食材、耗时、分类、工具和难度硬过滤框架。
-- 检索组件失败时的显式降级信息。
-- 参数化 Neo4j 查询模板，不使用 LLM 生成 Cypher。
+### 2.2 相似菜谱检索
 
-### 2.3 应用层
+- `similar_recipe` 直接复用参考菜谱在活动 FAISS 索引中的向量，不再重新嵌入整句问法。
+- 参考菜谱本身不会出现在相似结果中。
+- FAISS 可用时保持其相似度顺序；参考无关的 Neo4j 食材数量榜只补充候选和验证约束，不能主导排名。
+- 排除食材等硬条件仍在返回前统一验证。
 
-- `POST /api/v1/search`。
-- `GET /api/v1/recipes/{recipe_id}`。
-- `POST /api/v1/recipes/{recipe_id}/answer/stream`。
-- `GET /health` 和 `GET /ready`。
-- 搜索、结构化详情和 LLM 生成相互分离。
-- 静态 HTML、CSS、JavaScript Web UI。
-- Windows 启动、索引构建和基准测试脚本。
+### 2.3 本地模型与 readiness
 
-## 3. 当前验证证据
+- 本机 `bge-m3` 冷加载实测超过原来的 0.75 秒，默认 dense 超时已调整为 6 秒。
+- 显式卸载模型后的首次预热请求约 2.87 秒，随后恢复到约 0.18–0.20 秒。
+- `/ready` 将 `bge-m3` 和 Ollama 标签 `bge-m3:latest` 视为同一模型，不再误报缺失。
+- Neo4j、活动 manifest、BM25、FAISS ID 集合和 1024 维向量已完成一致性校验。
+
+### 2.4 安装与打包
+
+- setuptools 包发现已限制为 `api*` 和 `cookqa*`。
+- `python -m pip install --no-deps -e ".[dev,faiss]"` 已成功。
+- 安装后 `api`、`cookqa` 可导入，`pip check` 无损坏依赖。
+
+## 3. P1 最终验证证据
 
 ### 3.1 自动化测试
 
-运行命令：
-
-```powershell
-$env:TEMP="$PWD\.tmp\pytest-temp"
-$env:TMP=$env:TEMP
-python -m pytest -q --basetemp .tmp\pytest-unfinished-doc -o cache_dir=.tmp\pytest-cache
-```
-
-最近结果：
-
 ```text
-87 passed, 1 warning in 0.84s
+106 passed, 1 warning in 1.08s
+Ruff: All checks passed!
+pip check: No broken requirements found.
 ```
 
 唯一警告来自当前环境的 FastAPI TestClient 兼容层：
@@ -66,207 +68,57 @@ python -m pytest -q --basetemp .tmp\pytest-unfinished-doc -o cache_dir=.tmp\pyte
 StarletteDeprecationWarning: Using httpx with starlette.testclient is deprecated
 ```
 
-### 3.2 数据验证
+### 3.2 真实 HTTP 基准
 
-当前选择清单已验证：
-
-```text
-SELECTION_COUNT 200
-PARSED_COUNT 200
-UNIQUE_IDS 200
-```
-
-这只能证明当前解析器能够解析选中的 200 个文件，不代表 Neo4j、稠密索引和 BM25 已在真实环境完成联合构建。
-
-### 3.3 HTTP 冒烟
-
-在没有活动索引的本机状态下：
+报告路径：`Data/runtime/benchmark-report.json`（Git 忽略的运行产物）。
 
 ```text
-GET  /health                  -> 200
-GET  /ready                   -> 503
-GET  /                        -> 200
-GET  /static/app.js           -> 200
-POST /api/v1/search           -> 503
+case_count: 50
+evaluated_count: 50
+Recall@5: 0.90
+hard_filter_violations: 0
+search P50: 11.75ms
+search P95: 179.60ms
+first-token P50: 500.27ms
+first-token P95: 507.07ms
+warmup_detail_failures: 0
+detail_failures: 0
+HTTP failures: 0
 ```
 
-这证明进程存活、Web UI 可访问，并且服务不会在运行数据缺失时冒充就绪。
+四项 P1 门槛全部通过：
 
-### 3.4 安全检查
+- [x] Recall@5 不低于 0.90。
+- [x] 可靠硬条件违规结果为 0。
+- [x] 推荐列表预热 P95 不超过 1 秒。
+- [x] 详细回答首字预热 P95 不超过 3 秒。
 
-- 已执行常见 API Key、Token、Bearer Token 和硬编码 Neo4j 密码模式扫描，无命中。
-- `.env.example` 只包含占位符。
-- 当前日志与公开错误不输出密码、Token、Cookie、Authorization 请求头或堆栈。
-
-## 4. P0：完成前必须修复
-
-### 4.1 使用真实 FAISS 索引（已完成）
-
-`cookqa/retrieval/faiss_store.py` 现由 `FaissVectorIndex` 封装真实 `faiss.IndexFlatIP`，不再保留 NumPy 稠密索引兼容路径。
-
-已完成并验证：
-
-- 构建与查询向量使用一致的 L2 归一化。
-- FAISS 二进制索引持久化为 `faiss.index`，`recipe_id` 映射单独保存为 `faiss.ids.json`。
-- 加载时校验索引类型、维度、向量数量、ID 数量和重复 ID。
-- FAISS 缺失、损坏或映射无效时明确标记运行数据未就绪，不静默退回 NumPy。
-- 构建器和运行时均使用双文件 FAISS 工件，`/ready` 的索引状态来自真实加载与一致性校验。
-- 直接 FAISS 测试 7 项、FAISS/构建/清单/运行时聚焦测试 12 项、全量测试 55 项均通过。
-- `cookqa/` 与 `tests/` 中已无 `ExactVectorIndex` 或 `faiss.npz` 引用。
-
-本项仅表示真实 FAISS 代码路径闭环；200 道菜的本地三路联合构建仍属于 P1 验收。
-
-### 4.2 改造 Neo4j 构建和回滚
-
-已完成并验证：
-
-- Recipe 节点使用 `recipe_id + data_version` 联合标识，不再全局删除活动 Recipe。
-- `BuildPipeline` 先写入并验证候选图版本，再发布本地索引，最后原子切换 `active.json`。
-- `active.json` 保存当前版本和上一版本，是 Windows 单实例的唯一活动指针。
-- 写入中断、校验失败或指针切换失败时只清理候选版本，旧指针逐字节保持不变。
-- 切换成功后最佳努力清理历史版本，并保留当前与上一版本；清理失败不撤销新版本。
-- `rollback-indexes` 在校验上一版本 BM25、FAISS、manifest 和 Neo4j ID 集合后原子回滚。
-- 运行时把 manifest 的 `data_version` 注入所有 Neo4j 候选查询。
-- 已增加版本写入、失败注入、切换、清理、运行时过滤和回滚测试。
-
-完成证据：构建相关 18 项回归测试通过；全量测试中的故障注入均保持旧活动版本可用。
-
-### 4.3 补齐菜谱比较
-
-已完成并验证：
-
-- 只比较路由器识别出的两道菜，不返回无关 Top 5。
-- 返回共同和不同的食材、分类、方法、工具、难度和明确耗时。
-- 缺失字段显示“无法确认”，不推断为相同或不同。
-- 比较结果来自结构化数据，不依赖 LLM。
-- 识别超过两道菜时要求用户保留两个菜名。
-- 已增加纯比较器、服务层和真实路由到 API 的集成测试。
-
-完成证据：六类查询 API 集成测试通过；比较查询返回两道指定菜及可验证的结构化差异。
-
-## 5. P1：真实集成与正确性收口
-
-### 5.1 运行时加载食材别名
-
-构建阶段会读取 `config/ingredient_aliases.json`，但运行时创建 `QueryRouter` 时还没有加载同一份别名表。必须保证“西红柿”和“番茄”等查询使用与构建阶段完全一致的规范化规则。
-
-### 5.2 修正主观词和硬条件语义
-
-“不辣”当前可能被简化为排除名为“辣”的食材，无法可靠覆盖辣椒、辣椒粉、豆瓣酱或规则推断标签。
-
-必须明确：
-
-- 明确食材排除使用规范化食材实体。
-- “辣”“清淡”“下饭”等主观表达默认只参与软排序。
-- 只有存在可靠结构化标签和证据时，才能将其用于硬过滤。
-- 字段缺失时必须标记无法验证。
-
-### 5.3 验证本地 HowToCook checkout
-
-本次浅克隆命令发生超时。当前目录能读取固定提交和 200 个目标文件，但 Git 工作区状态异常，正式构建前应重新获取一个干净的固定提交 checkout，并重新验证：
-
-```powershell
-git -C Data/source/howtocook rev-parse HEAD
-git -C Data/source/howtocook status --short
-```
-
-期望提交必须是：
+### 3.3 HTTP/Web UI 冒烟
 
 ```text
-cbc524e28a88bf5ccc6e094004cfbeba1ea6fdf9
+GET /health        -> 200
+GET /ready         -> 200
+GET /              -> 200
+GET /static/app.js -> 200
 ```
 
-正式验收时不应使用状态异常的上游 checkout。
+测试使用的临时 CookQA API 进程已停止；Neo4j Windows 服务保持运行。
 
-### 5.4 运行完整本地构建
+## 4. P2：仍需处理
 
-必须在本机真实运行：
+以下事项不阻塞 P1，但仍属于后续工程收口：
 
-- Neo4j Windows ZIP 发行版。
-- Ollama `qwen3.5:4b`。
-- Ollama `bge-m3`。
-- 200 道菜的 BM25、FAISS 和 Neo4j 联合构建。
-- 跨索引数量、ID 哈希、版本和向量维度校验。
+- 处理 FastAPI TestClient 的 `httpx` 兼容层弃用警告。
+- 为真实 Neo4j/Ollama 集成测试增加可选 pytest 标记和独立运行说明。
+- 让 benchmark 在报告中保存未命中案例、意图和降级组件汇总，减少后续排查成本。
+- 将 `cold_start_ms` 从当前 `null` 改为可重复、自动化的独立冷启动测量。
+- 为 Neo4j 增加必要索引/约束，并减少可空属性或不存在关系类型引发的通知噪声。
+- 明确 `config/recipe-selection.txt` 与 `config/recipe-selection-mvp.txt` 的职责，避免误用空清单。
+- 为索引版本切换、回滚和历史清理补充长期运行日志与恢复手册。
+- P1 改动尚未提交；提交前继续保持密码和运行数据不进入 Git。
 
-完成后 `/ready` 必须返回 200，并显示三套索引和两个 Ollama 模型均可用。
+## 5. 工作区说明
 
-### 5.5 固定评测集验收
+当前工作分支为 `agent/publish-cookqa`，工作区包含本轮 P1 的已跟踪修改和新增测试。结构化补丁工具更新已有文件时仍会间歇返回 `windows sandbox: helper_unknown_error: setup refresh had errors`；本轮源码改动均通过可审计补丁完成，没有使用 PowerShell/Python 直接改写源码。
 
-`evaluation/queries.jsonl` 已包含 50 条查询，但尚未在真实三路检索结果上跑出验收报告。
-
-必须验证：
-
-- 六类查询都有实际返回。
-- 菜名和别名查询 Top 1 准确率为 100%。
-- 固定评测集 Recall@5 不低于 90%。
-- 可靠硬条件违规结果为 0。
-- 无法验证的条件明确标记。
-
-### 5.6 性能验收
-
-尚未在当前机器的预热状态下获得有效性能报告。
-
-必须分别测量：
-
-- 冷启动耗时。
-- 推荐列表 P50、P95。
-- 详细回答首字 P50、P95。
-- 路由、BM25、Neo4j、Embedding、FAISS、过滤、RRF 和序列化分阶段耗时。
-
-目标仍为：
-
-- 预热推荐列表 P95 不超过 1 秒。
-- 预热详细回答首字 P95 不超过 3 秒。
-
-未获得真实报告前不得声明达标。
-
-## 6. P2：工程收口
-
-- Ruff `0.15.21` 已安装并完成全仓检查，结果为 `All checks passed!`。
-- 处理 FastAPI TestClient 的兼容层弃用警告。
-- 增加真实 Neo4j 和 Ollama 集成测试的可选标记与运行说明。
-- 检查 `config/recipe-selection.txt` 与正式 `config/recipe-selection-mvp.txt` 的职责，删除或明确废弃空清单，避免误用。
-- 检查构建报告是否只记录安全的异常类型和文件路径，不记录凭据或请求头。
-- 为索引版本切换、回滚和清理增加运维日志及恢复步骤。
-
-## 7. 当前工作区说明
-
-### 7.1 Git 已恢复
-
-当前目录已恢复为有效 Git 仓库，`main` 跟踪 `origin/main`，远端为 `XiaoGuoHong/CookQA`。代码、文档和删除项均可通过 Git 差异审计和提交。
-
-### 7.2 结构化补丁工具仍不稳定
-
-结构化补丁工具更新已有文件时仍会间歇返回 `windows sandbox: helper_unknown_error: setup refresh had errors`。本轮未使用 PowerShell/Python 直接重写源码；受影响的内容通过 Git 对象或可审计补丁写入，并在提交前执行 `git diff --check`。
-
-本地仍有未跟踪的 `tests/.sandbox-probe`，它未被修改或提交。
-
-## 8. 推荐继续顺序
-
-1. 补齐运行时别名与硬条件语义。
-2. 重新获取干净的 HowToCook 固定提交。
-3. 启动本地 Neo4j 与 Ollama，完成 200 道真实构建。
-4. 运行 50 条固定评测和性能基准。
-5. 完成 HTTP/Web UI 冒烟，并处理 FastAPI TestClient 兼容层警告。
-
-每一步只修改直接相关文件，不顺手重构无关模块。
-
-## 9. 最终完成判定
-
-只有同时满足以下条件，才可以将 CookQA MVP 标记为完成：
-
-- [x] 使用真实 FAISS 菜谱级索引。
-- [x] Neo4j 新版本构建失败不会破坏旧活动版本。
-- [x] 六类查询均有服务层和 API 层可验证行为。
-- [ ] 200 道菜完成 BM25、FAISS、Neo4j 联合构建。
-- [ ] `/ready` 在完整本地环境返回 200。
-- [ ] 菜名及别名查询 Top 1 准确率为 100%。
-- [ ] 固定评测集 Recall@5 不低于 90%。
-- [ ] 可靠硬条件违规结果为 0。
-- [ ] 推荐列表预热 P95 不超过 1 秒。
-- [ ] 详细回答首字预热 P95 不超过 3 秒。
-- [x] 全量自动化测试通过。
-- [x] Ruff 静态检查通过。
-- [x] 敏感信息扫描无命中。
-- [ ] Git 工作区状态可审计，所有改动均可查看和提交。
-
+本地未跟踪的 `tests/.sandbox-probe` 属于既有沙箱探针，本轮未修改，不应提交。

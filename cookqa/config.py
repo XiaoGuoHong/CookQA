@@ -36,8 +36,8 @@ class Settings:
     neo4j_user: str = "neo4j"
     neo4j_password: str | None = field(default=None, repr=False)
     data_dir: Path = Path("Data")
-    request_timeout_seconds: float = 3.0
-    dense_timeout_seconds: float = 0.75
+    request_timeout_seconds: float = 30.0
+    dense_timeout_seconds: float = 6.0
     cache_ttl_seconds: int = 30
 
     @classmethod
@@ -53,7 +53,7 @@ class Settings:
             neo4j_user=os.getenv("NEO4J_USER", "neo4j"),
             neo4j_password=password,
             data_dir=Path(os.getenv("COOKQA_DATA_DIR", "Data")),
-            request_timeout_seconds=_env_float("COOKQA_REQUEST_TIMEOUT", 3.0),
-            dense_timeout_seconds=_env_float("COOKQA_DENSE_TIMEOUT", 0.75),
+            request_timeout_seconds=_env_float("COOKQA_REQUEST_TIMEOUT", 30.0),
+            dense_timeout_seconds=_env_float("COOKQA_DENSE_TIMEOUT", 6.0),
             cache_ttl_seconds=_env_int("COOKQA_CACHE_TTL", 30),
         )

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -61,6 +62,13 @@ class FaissVectorIndex:
         index.add(array)
         return cls(recipe_ids, index)
 
+    def vector_for(self, recipe_id: str) -> np.ndarray:
+        try:
+            position = self.recipe_ids.index(recipe_id)
+        except ValueError as exc:
+            raise KeyError(recipe_id) from exc
+        return np.asarray(self.index.reconstruct(position), dtype=np.float32)
+
     def search(self, vector: np.ndarray, limit: int) -> list[tuple[str, float]]:
         if limit <= 0:
             raise ValueError("limit 必须大于 0")
@@ -111,15 +119,23 @@ class FaissRetriever:
         index: FaissVectorIndex,
         embedder: Embedder,
         timeout_seconds: float = 0.75,
+        reference_recipe_ids: Mapping[str, str] | None = None,
     ):
         self.index = index
         self.embedder = embedder
         self.timeout_seconds = timeout_seconds
+        self.reference_recipe_ids = dict(reference_recipe_ids or {})
 
     async def search(self, plan: QueryPlan, limit: int) -> list[RankedCandidate]:
-        vector = await asyncio.wait_for(
-            self.embedder.embed(plan.normalized_query), timeout=self.timeout_seconds
-        )
+        vector: np.ndarray | list[float] | None = None
+        if plan.intent == "similar_recipe" and plan.recognized_recipes:
+            reference_id = self.reference_recipe_ids.get(plan.recognized_recipes[0])
+            if reference_id is not None:
+                vector = self.index.vector_for(reference_id)
+        if vector is None:
+            vector = await asyncio.wait_for(
+                self.embedder.embed(plan.normalized_query), timeout=self.timeout_seconds
+            )
         return [
             RankedCandidate(
                 recipe_id=recipe_id,

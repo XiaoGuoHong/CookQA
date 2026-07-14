@@ -7,7 +7,7 @@ $projectRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $projectRoot
 
 if (-not $env:NEO4J_PASSWORD) {
-    throw "请先在当前终端设置 NEO4J_PASSWORD。"
+    throw "NEO4J_PASSWORD is not set in this PowerShell session."
 }
 
 python -m cookqa.cli build-indexes --source-root $SourceRoot

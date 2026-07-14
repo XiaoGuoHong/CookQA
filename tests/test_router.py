@@ -43,7 +43,7 @@ def test_conditional_query_extracts_hard_constraints(router):
 
     assert plan.constraints.max_minutes == 20
     assert plan.required_ingredients == ["鸡肉"]
-    assert "辣" in plan.excluded_ingredients
+    assert plan.constraints.excluded_labels == ["spicy"]
 
 
 def test_alias_is_normalized_to_canonical_ingredient(router):

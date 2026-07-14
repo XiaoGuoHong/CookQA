@@ -80,8 +80,13 @@ class RuntimeReadiness:
                 components["neo4j"] = ComponentStatus(available=False, detail="Neo4j 校验失败")
         try:
             models = await self.ollama.available_models()
+            model_aliases = {model.removesuffix(":latest") for model in models}
             required = {self.ollama.settings.chat_model, self.ollama.settings.embedding_model}
-            missing = sorted(required - models)
+            missing = sorted(
+                model
+                for model in required
+                if model not in models and model.removesuffix(":latest") not in model_aliases
+            )
             components["ollama"] = ComponentStatus(
                 available=not missing,
                 detail=("缺少模型: " + ", ".join(missing)) if missing else None,
@@ -94,6 +99,14 @@ class RuntimeReadiness:
             components=components,
             manifest=self.manifest.model_dump() if self.manifest else None,
         )
+
+
+def _load_ingredient_aliases(path: Path | None = None) -> dict[str, str]:
+    alias_path = path or Path(__file__).resolve().parents[1] / "config" / "ingredient_aliases.json"
+    payload = json.loads(alias_path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError("ingredient_aliases.json 必须是对象")
+    return {str(alias): str(canonical) for alias, canonical in payload.items()}
 
 
 def _load_recipes(path: Path) -> dict[str, Recipe]:
@@ -128,16 +141,32 @@ def build_runtime(settings: Settings):
                 settings.neo4j_uri,
                 auth=(settings.neo4j_user, settings.neo4j_password),
             )
-        retrievers = [bm25, FaissRetriever(vector_index, ollama, settings.dense_timeout_seconds)]
-        if driver is not None:
-            retrievers.append(Neo4jRetriever(driver, manifest.data_version))
+
         recipe_names: dict[str, str] = {}
+        reference_recipe_ids: dict[str, str] = {}
         ingredient_names: set[str] = set()
         for recipe in recipes.values():
             recipe_names[recipe.name] = recipe.name
             recipe_names.update({alias: recipe.name for alias in recipe.aliases})
+            reference_recipe_ids[recipe.name] = recipe.recipe_id
+            reference_recipe_ids.update(
+                {alias: recipe.recipe_id for alias in recipe.aliases}
+            )
             ingredient_names.update(ingredient.name for ingredient in recipe.ingredients)
-        router = QueryRouter(recipe_names, ingredient_names)
+
+        retrievers = [
+            bm25,
+            FaissRetriever(
+                vector_index,
+                ollama,
+                settings.dense_timeout_seconds,
+                reference_recipe_ids,
+            ),
+        ]
+        if driver is not None:
+            retrievers.append(Neo4jRetriever(driver, manifest.data_version))
+        ingredient_aliases = _load_ingredient_aliases()
+        router = QueryRouter(recipe_names, ingredient_names, ingredient_aliases=ingredient_aliases)
         service = SearchService(router, RetrievalCoordinator(recipes, retrievers), recipes)
         readiness = RuntimeReadiness(manifest, bm25, vector_index, driver, ollama)
         return service, readiness, ollama

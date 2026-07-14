@@ -96,10 +96,58 @@ class RetrievalCoordinator:
             warnings.append("Neo4j 不可用，明确条件未经过图数据库验证。")
 
         fused = reciprocal_rank_fusion(rankings, self.weights)
+        fused_score = {candidate.recipe_id: candidate.score for candidate in fused}
+        query_text = plan.normalized_query.casefold()
+
+        def fallback_score(recipe: Recipe) -> float:
+            searchable = " ".join(
+                [recipe.name, *recipe.categories, *recipe.tags, *recipe.methods]
+            ).casefold()
+            overlap = sum(1 for char in query_text if char.strip() and char in searchable)
+            required = sum(
+                2
+                for item in plan.required_ingredients
+                if any(
+                    item.casefold() in value.casefold()
+                    for value in [recipe.name, *(i.name for i in recipe.ingredients)]
+                )
+            )
+            category = (
+                4
+                if any(
+                    value.casefold() in {c.casefold() for c in recipe.categories}
+                    or f"/{value.casefold()}/" in f"/{recipe.source_path.casefold()}"
+                    for value in plan.constraints.categories
+                )
+                else 0
+            )
+            return float(overlap + required + category)
+
+        fallback = sorted(self.recipes.values(), key=fallback_score, reverse=True)
+        similarity_order = (
+            rankings.get("faiss", []) if plan.intent == "similar_recipe" else []
+        )
+        ordered_ids = list(
+            dict.fromkeys(
+                similarity_order
+                + [candidate.recipe_id for candidate in fused]
+                + [recipe.recipe_id for recipe in fallback]
+            )
+        )
         results: list[SearchResult] = []
-        for candidate in fused:
-            recipe = self.recipes.get(candidate.recipe_id)
+        seen_ids: set[str] = set()
+        for recipe_id in ordered_ids:
+            if recipe_id in seen_ids:
+                continue
+            seen_ids.add(recipe_id)
+            candidate = next((item for item in fused if item.recipe_id == recipe_id), None)
+            recipe = self.recipes.get(recipe_id)
             if recipe is None:
+                continue
+            if plan.intent == "similar_recipe" and (
+                recipe.name in plan.recognized_recipes
+                or set(recipe.aliases).intersection(plan.recognized_recipes)
+            ):
                 continue
             if not graph_failed and not satisfies_hard_filters(
                 recipe,
@@ -111,9 +159,9 @@ class RetrievalCoordinator:
             results.append(
                 SearchResult(
                     recipe=recipe,
-                    score=candidate.score,
-                    reasons=list(dict.fromkeys(reasons_by_id.get(candidate.recipe_id, []))),
-                    retrieval_sources=candidate.sources,
+                    score=fused_score.get(recipe_id, fallback_score(recipe)),
+                    reasons=list(dict.fromkeys(reasons_by_id.get(recipe_id, []))),
+                    retrieval_sources=candidate.sources if candidate else ["fallback"],
                     constraints_verified=not graph_failed,
                 )
             )

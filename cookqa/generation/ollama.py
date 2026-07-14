@@ -78,6 +78,7 @@ class OllamaClient:
                     "model": self.settings.chat_model,
                     "prompt": self._prompt(recipe, question),
                     "stream": True,
+                    "think": False,
                 },
             ) as response:
                 response.raise_for_status()
