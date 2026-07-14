@@ -130,7 +130,7 @@ def build_runtime(settings: Settings):
             )
         retrievers = [bm25, FaissRetriever(vector_index, ollama, settings.dense_timeout_seconds)]
         if driver is not None:
-            retrievers.append(Neo4jRetriever(driver))
+            retrievers.append(Neo4jRetriever(driver, manifest.data_version))
         recipe_names: dict[str, str] = {}
         ingredient_names: set[str] = set()
         for recipe in recipes.values():

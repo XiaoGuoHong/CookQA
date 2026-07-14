@@ -6,10 +6,15 @@ from typing import Any
 from cookqa.models import QueryPlan, RankedCandidate
 
 
-def build_candidate_query(plan: QueryPlan, limit: int) -> tuple[str, dict[str, Any]]:
+def build_candidate_query(
+    plan: QueryPlan,
+    limit: int,
+    data_version: str,
+) -> tuple[str, dict[str, Any]]:
     cypher = """
     MATCH (recipe:Recipe)
-    WHERE ($required_ingredients = [] OR ALL(name IN $required_ingredients WHERE
+    WHERE recipe.data_version = $data_version
+      AND ($required_ingredients = [] OR ALL(name IN $required_ingredients WHERE
       EXISTS { MATCH (recipe)-[:REQUIRES]->(required:Ingredient) WHERE required.name = name }))
       AND ($excluded_ingredients = [] OR NONE(name IN $excluded_ingredients WHERE
       EXISTS { MATCH (recipe)-[:REQUIRES]->(excluded:Ingredient) WHERE excluded.name = name }))
@@ -27,6 +32,7 @@ def build_candidate_query(plan: QueryPlan, limit: int) -> tuple[str, dict[str, A
     LIMIT $limit
     """
     parameters = {
+        "data_version": data_version,
         "required_ingredients": plan.required_ingredients,
         "excluded_ingredients": plan.excluded_ingredients,
         "max_minutes": plan.constraints.max_minutes,
@@ -40,12 +46,18 @@ def build_candidate_query(plan: QueryPlan, limit: int) -> tuple[str, dict[str, A
 class Neo4jRetriever:
     name = "neo4j"
 
-    def __init__(self, driver: Any, database: str | None = None):
+    def __init__(
+        self,
+        driver: Any,
+        data_version: str,
+        database: str | None = None,
+    ):
         self.driver = driver
+        self.data_version = data_version
         self.database = database
 
     def _search_sync(self, plan: QueryPlan, limit: int) -> list[RankedCandidate]:
-        cypher, parameters = build_candidate_query(plan, limit)
+        cypher, parameters = build_candidate_query(plan, limit, self.data_version)
         records, _, _ = self.driver.execute_query(
             cypher,
             parameters_=parameters,

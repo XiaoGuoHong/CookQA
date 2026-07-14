@@ -20,6 +20,9 @@ def build_parser() -> argparse.ArgumentParser:
     build.add_argument("--source-manifest", type=Path, default=Path("config/howtocook-source.json"))
     build.add_argument("--data-dir", type=Path, default=Path("Data"))
 
+    rollback = subcommands.add_parser("rollback-indexes", help="验证并回滚到上一索引版本")
+    rollback.add_argument("--data-dir", type=Path, default=Path("Data"))
+
     serve = subcommands.add_parser("serve", help="启动本地 FastAPI 服务")
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", type=int, default=8000)
@@ -43,10 +46,14 @@ def _source_version(source_root: Path, source_manifest: Path) -> str:
     return actual
 
 
+def _require_neo4j_password(settings: Settings) -> None:
+    if not settings.neo4j_password:
+        raise RuntimeError("缺少 NEO4J_PASSWORD，不能操作 Neo4j 图索引")
+
+
 async def _build(args: argparse.Namespace) -> None:
     settings = Settings.from_env()
-    if not settings.neo4j_password:
-        raise RuntimeError("缺少 NEO4J_PASSWORD，不能构建 Neo4j 图索引")
+    _require_neo4j_password(settings)
     from neo4j import GraphDatabase
 
     from cookqa.generation.ollama import OllamaClient
@@ -73,6 +80,34 @@ async def _build(args: argparse.Namespace) -> None:
         )
     finally:
         driver.close()
+    _print_result(result)
+
+
+async def _rollback(args: argparse.Namespace) -> None:
+    settings = Settings.from_env()
+    _require_neo4j_password(settings)
+    from neo4j import GraphDatabase
+
+    from cookqa.generation.ollama import OllamaClient
+    from cookqa.indexing.builder import BuildPipeline
+    from cookqa.indexing.neo4j_writer import Neo4jGraphWriter
+
+    driver = GraphDatabase.driver(
+        settings.neo4j_uri,
+        auth=(settings.neo4j_user, settings.neo4j_password),
+    )
+    try:
+        await asyncio.to_thread(driver.verify_connectivity)
+        result = await BuildPipeline(
+            OllamaClient(settings),
+            Neo4jGraphWriter(driver),
+        ).rollback(args.data_dir)
+    finally:
+        driver.close()
+    _print_result(result)
+
+
+def _print_result(result) -> None:
     print(
         json.dumps(
             {
@@ -90,6 +125,9 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.command == "build-indexes":
         asyncio.run(_build(args))
+        return 0
+    if args.command == "rollback-indexes":
+        asyncio.run(_rollback(args))
         return 0
     if args.command == "serve":
         import uvicorn

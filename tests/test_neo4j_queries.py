@@ -13,10 +13,11 @@ def test_neo4j_query_uses_parameters_for_user_values():
         confidence=0.9,
     )
 
-    cypher, parameters = build_candidate_query(plan, limit=5)
+    cypher, parameters = build_candidate_query(plan, limit=5, data_version="v2")
 
     assert "猪肉" not in cypher
     assert "$excluded_ingredients" in cypher
     assert "$max_minutes" in cypher
     assert parameters["excluded_ingredients"] == ["猪肉"]
+    assert parameters["data_version"] == "v2"
     assert parameters["max_minutes"] == 20

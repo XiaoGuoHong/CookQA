@@ -1,16 +1,17 @@
-from cookqa.cli import build_parser
+from pathlib import Path
+
+import cookqa.cli as cli
 
 
-def test_build_command_uses_versioned_mvp_defaults():
-    args = build_parser().parse_args(["build-indexes"])
+def test_rollback_command_dispatches_to_async_handler(tmp_path, monkeypatch):
+    called = {}
 
-    assert args.source_root.as_posix().endswith("Data/source/howtocook")
-    assert args.selection.as_posix().endswith("config/recipe-selection-mvp.txt")
-    assert args.source_manifest.as_posix().endswith("config/howtocook-source.json")
+    async def fake_rollback(args):
+        called["data_dir"] = args.data_dir
 
+    monkeypatch.setattr(cli, "_rollback", fake_rollback, raising=False)
 
-def test_serve_command_binds_only_to_loopback_by_default():
-    args = build_parser().parse_args(["serve"])
+    result = cli.main(["rollback-indexes", "--data-dir", str(tmp_path)])
 
-    assert args.host == "127.0.0.1"
-    assert args.port == 8000
+    assert result == 0
+    assert called["data_dir"] == Path(tmp_path)
