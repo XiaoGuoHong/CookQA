@@ -94,8 +94,18 @@ class QueryRouter:
             "excluded_ingredients": excluded,
             "constraints": constraints,
         }
+        comparison_requested = any(term in normalized for term in _COMPARISON_TERMS)
 
-        if len(recipes) >= 2 and any(term in normalized for term in _COMPARISON_TERMS):
+        if len(recipes) > 2 and comparison_requested:
+            return QueryPlan(
+                **common,
+                intent="clarification_required",
+                retrieval_strategy=[],
+                confidence=1.0,
+                clarification="一次只能比较两道菜，请保留两个菜名。",
+            )
+
+        if len(recipes) == 2 and comparison_requested:
             return QueryPlan(
                 **common,
                 intent="recipe_comparison",
