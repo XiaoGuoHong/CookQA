@@ -13,6 +13,7 @@ Intent = Literal[
     "recipe_comparison",
     "clarification_required",
 ]
+UnknownValue = Literal["无法确认"]
 
 
 class Ingredient(BaseModel):
@@ -126,6 +127,31 @@ class SearchResult(BaseModel):
     constraints_verified: bool = True
 
 
+class SetComparison(BaseModel):
+    left: list[str] | UnknownValue
+    right: list[str] | UnknownValue
+    common: list[str] | UnknownValue
+    only_left: list[str] | UnknownValue
+    only_right: list[str] | UnknownValue
+
+
+class ScalarComparison(BaseModel):
+    left: str | int
+    right: str | int
+    relationship: Literal["same", "different", "unknown"]
+
+
+class RecipeComparison(BaseModel):
+    left_recipe_id: str
+    right_recipe_id: str
+    ingredients: SetComparison
+    categories: SetComparison
+    methods: SetComparison
+    tools: SetComparison
+    difficulty: ScalarComparison
+    duration_minutes: ScalarComparison
+
+
 class DegradationStatus(BaseModel):
     degraded: bool = False
     unavailable_components: list[str] = Field(default_factory=list)
@@ -135,6 +161,7 @@ class DegradationStatus(BaseModel):
 class SearchResponse(BaseModel):
     query_plan: QueryPlan
     results: list[SearchResult] = Field(default_factory=list)
+    comparison: RecipeComparison | None = None
     retrieval_strategy: list[str] = Field(default_factory=list)
     timings_ms: dict[str, float] = Field(default_factory=dict)
     degradation: DegradationStatus = Field(default_factory=DegradationStatus)
