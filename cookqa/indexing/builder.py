@@ -101,12 +101,18 @@ class BuildPipeline:
         plan = None
         deleted: list[str] = []
         try:
+            if apply and active is None:
+                raise ValueError("缺少活动版本指针，拒绝执行历史清理")
             graph_versions = await self.graph_writer.list_versions()
             plan = build_cleanup_plan(
                 data_dir,
                 graph_versions=graph_versions,
                 explicit_keep=explicit_keep,
             )
+            if apply and plan.missing_required_versions:
+                raise ValueError(
+                    "受保护版本缺少有效本地 artifact，拒绝执行历史清理"
+                )
             if apply:
                 for version in plan.candidate_versions:
                     await self.graph_writer.delete_version(version)

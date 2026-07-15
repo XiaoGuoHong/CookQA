@@ -1,6 +1,12 @@
 import json
 
-from scripts.benchmark import expected_ids, run, summarize_case_diagnostics, summarize_latencies
+from scripts.benchmark import (
+    expected_ids,
+    report_passed,
+    run,
+    summarize_case_diagnostics,
+    summarize_latencies,
+)
 
 
 def test_latency_summary_reports_sample_count_and_p50_p95():
@@ -11,6 +17,29 @@ def test_latency_summary_reports_sample_count_and_p50_p95():
         "p50_ms": 20.0,
         "p95_ms": 40.0,
     }
+
+
+def test_report_passed_requires_all_targets_and_zero_failures():
+    report = {
+        "targets": {"recall": True, "latency": True},
+        "failures": [],
+        "warmup_detail_failures": 0,
+        "detail_failures": 0,
+    }
+
+    assert report_passed(report) is True
+
+    report["targets"]["latency"] = False
+    assert report_passed(report) is False
+    report["targets"]["latency"] = True
+    report["failures"] = [{"error_type": "http_error"}]
+    assert report_passed(report) is False
+    report["failures"] = []
+    report["warmup_detail_failures"] = 1
+    assert report_passed(report) is False
+    report["warmup_detail_failures"] = 0
+    report["detail_failures"] = 1
+    assert report_passed(report) is False
 
 
 def test_case_diagnostics_report_misses_intents_degradation_and_failures():

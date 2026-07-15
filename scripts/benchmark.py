@@ -29,6 +29,16 @@ def summarize_latencies(values: list[float]) -> dict[str, float | int | None]:
     }
 
 
+def report_passed(report: dict) -> bool:
+    return bool(
+        report.get("targets")
+        and all(report["targets"].values())
+        and not report.get("failures")
+        and report.get("warmup_detail_failures") == 0
+        and report.get("detail_failures") == 0
+    )
+
+
 def load_cases(path: Path) -> list[dict]:
     return [
         json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()
@@ -336,7 +346,7 @@ def main() -> int:
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps(report, ensure_ascii=False, indent=2))
-    return 0
+    return 0 if report_passed(report) else 1
 
 
 if __name__ == "__main__":

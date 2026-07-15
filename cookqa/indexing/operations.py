@@ -13,6 +13,7 @@ from cookqa.indexing.manifest import IndexManifest
 @dataclass(frozen=True, slots=True)
 class CleanupPlan:
     protected_versions: tuple[str, ...]
+    missing_required_versions: tuple[str, ...]
     candidate_versions: tuple[str, ...]
     invalid_local_entries: tuple[str, ...]
     graph_only_versions: tuple[str, ...]
@@ -39,11 +40,13 @@ def build_cleanup_plan(
     explicit_keep: set[str] | None = None,
 ) -> CleanupPlan:
     protected = set(explicit_keep or set())
+    required: set[str] = set()
     active = read_active_version(data_dir)
     if active is not None:
-        protected.add(active.version)
+        required.add(active.version)
         if active.previous_version is not None:
-            protected.add(active.previous_version)
+            required.add(active.previous_version)
+    protected.update(required)
 
     valid_local: set[str] = set()
     invalid_local: list[str] = []
@@ -62,8 +65,10 @@ def build_cleanup_plan(
 
     candidates = valid_local - protected
     graph_only = graph_versions - valid_local - protected
+    missing_required = required - valid_local
     return CleanupPlan(
         protected_versions=tuple(sorted(protected)),
+        missing_required_versions=tuple(sorted(missing_required)),
         candidate_versions=tuple(sorted(candidates)),
         invalid_local_entries=tuple(sorted(invalid_local)),
         graph_only_versions=tuple(sorted(graph_only)),

@@ -152,12 +152,13 @@ P2A 运行产物位于 Git 忽略的 `Data/runtime/benchmark-report.json` 和 `D
 2026-07-15 最终真实验收：
 
 ```text
-default pytest: 123 passed, 2 deselected, 0 warnings
-integration pytest: 2 passed, 123 deselected
+default pytest: 126 passed, 2 deselected, 0 warnings
+integration pytest: 2 passed, 126 deselected
 new active recipe count: 200
 retained previous recipe count: 200
 named constraints: 6
 named Recipe data-version indexes: 1
+cleanup missing required versions: 0
 cleanup dry-run candidates: 0
 cleanup invalid local entries: 0
 cleanup graph-only versions: 0

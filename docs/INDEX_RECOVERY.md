@@ -48,13 +48,15 @@ python -m cookqa.cli cleanup-indexes --data-dir Data
 python -m cookqa.cli cleanup-indexes --data-dir Data --keep VERSION_TO_KEEP
 ```
 
-只有确认 `candidate_versions`、`invalid_local_entries` 和 `graph_only_versions` 后，才显式执行：
+只有确认 `missing_required_versions`、`candidate_versions`、`invalid_local_entries` 和 `graph_only_versions` 均符合预期后，才显式执行：
 
 ```powershell
 python -m cookqa.cli cleanup-indexes --data-dir Data --keep VERSION_TO_KEEP --apply
 ```
 
 正式清理只处理 `Data/indexes/<version>/index-manifest.json` 存在且 manifest 版本与目录名一致的历史目录，并逐版本同步删除 Neo4j Recipe 数据和本地目录。无效目录及仅存在于 Neo4j 的版本只报告，不自动删除。
+
+如果 `active.json` 缺失，或活动版本/上一版本缺少有效本地 artifact，`--apply` 将拒绝执行；后一种情况会由 `missing_required_versions` 列出对应版本，避免误删仅存的恢复候选。
 
 成功构建后的自动历史清理复用同一规划器，并始终保护新活动版本和上一版本。
 

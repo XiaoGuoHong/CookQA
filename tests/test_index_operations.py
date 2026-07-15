@@ -1,6 +1,8 @@
 import asyncio
 import json
 
+import pytest
+
 from cookqa.indexing.activation import activate_version
 from cookqa.indexing.builder import BuildPipeline
 from cookqa.indexing.manifest import IndexManifest
@@ -53,6 +55,7 @@ def test_cleanup_plan_protects_active_previous_and_explicit_versions(tmp_path):
     assert plan.candidate_versions == ("old",)
     assert plan.invalid_local_entries == ("invalid",)
     assert plan.graph_only_versions == ("graph-only",)
+    assert plan.missing_required_versions == ()
 
 
 def test_cleanup_history_is_dry_run_by_default_and_apply_is_scoped(tmp_path):
@@ -82,6 +85,44 @@ def test_cleanup_history_is_dry_run_by_default_and_apply_is_scoped(tmp_path):
     ]
     assert [event["operation"] for event in events] == ["cleanup_dry_run", "cleanup"]
     assert all(event["result"] == "success" for event in events)
+
+
+def test_cleanup_apply_rejects_missing_active_pointer(tmp_path):
+    data_dir = tmp_path / "Data"
+    write_version(data_dir, "old")
+    writer = CleanupGraphWriter({"old"})
+    pipeline = BuildPipeline(embedder=None, graph_writer=writer)
+
+    with pytest.raises(ValueError, match="缺少活动版本指针"):
+        asyncio.run(pipeline.cleanup_history(data_dir, apply=True))
+
+    assert writer.deleted == []
+    assert (data_dir / "indexes" / "old").is_dir()
+
+
+def test_cleanup_apply_rejects_missing_active_artifact(tmp_path):
+    data_dir = tmp_path / "Data"
+    write_version(data_dir, "old")
+    activate_version(data_dir, "missing-active", None)
+    writer = CleanupGraphWriter({"missing-active", "old"})
+    pipeline = BuildPipeline(embedder=None, graph_writer=writer)
+
+    dry_run = asyncio.run(pipeline.cleanup_history(data_dir))
+
+    assert dry_run.plan.missing_required_versions == ("missing-active",)
+    with pytest.raises(ValueError, match="受保护版本缺少有效本地 artifact"):
+        asyncio.run(pipeline.cleanup_history(data_dir, apply=True))
+
+    assert writer.deleted == []
+    assert (data_dir / "indexes" / "old").is_dir()
+    events = [
+        json.loads(line)
+        for line in (data_dir / "runtime" / "index-operations.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    assert events[-1]["operation"] == "cleanup"
+    assert events[-1]["result"] == "failed"
 
 
 def test_operation_log_stores_safe_error_category_without_exception_text(tmp_path):
