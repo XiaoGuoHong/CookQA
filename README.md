@@ -33,6 +33,10 @@ Phase 2 已于 2026-07-15 在真实 Neo4j、Ollama 和固定 200 道菜数据上
 
 Phase 2 完成的是 Windows 本地 Graph RAG MVP 工程收口，不代表生产部署或全量质量评估已经完成。
 
+Phase 3 已确定以产品功能与体验为主，采用“按现有食材找菜”为主线，并在菜谱详情中提供
+不保存会话历史的轻量单轮问答。当前仅完成设计、尚未实现，范围和验收标准见
+[`Phase 3 食材驱动产品体验设计`](docs/superpowers/specs/2026-07-15-cookqa-p3-pantry-experience-design.md)。
+
 ## 组件
 
 - Python 3.11+

@@ -1,10 +1,11 @@
 # CookQA 未完成事项
 
 - 更新日期：2026-07-15
-- 当前状态：P0、P1、Phase 2 已完成；当前定义范围内无未完成工程项
+- 当前状态：P0、P1、Phase 2 已完成；Phase 3 产品范围已确认、尚未实现
 - 目标平台：Windows 本机
 - 设计基线：[`docs/superpowers/specs/2026-07-13-cookqa-graph-rag-design.md`](superpowers/specs/2026-07-13-cookqa-graph-rag-design.md)
 - P1 计划：[`docs/superpowers/plans/2026-07-14-cookqa-p1-acceptance-implementation.md`](superpowers/plans/2026-07-14-cookqa-p1-acceptance-implementation.md)
+- Phase 3 设计：[`docs/superpowers/specs/2026-07-15-cookqa-p3-pantry-experience-design.md`](superpowers/specs/2026-07-15-cookqa-p3-pantry-experience-design.md)
 
 ## 1. 当前结论
 
@@ -183,7 +184,25 @@ pip check: No broken requirements found.
 
 活动指针最终指向本轮新构建版本，上一版本仍保留并已验证可回滚。benchmark、cold-start 和操作审计均位于 Git 忽略的 `Data/runtime/`，未提交密码或运行数据。
 
-## 5. 工作区说明
+## 5. Phase 3 产品功能与体验：待实现
+
+Phase 3 已确认采用“B 主线 + C 轻量增强”：以现有食材找菜为主流程，在当前菜谱详情中
+增加无会话记忆的单轮流式问答体验。固定 200 道菜和 Phase 2 检索、性能基线保持不变。
+
+待实现事项：
+
+- [ ] 增加已有食材、排除食材、最长耗时、不辣和默认基础调料的结构化请求；
+- [ ] 按“可以直接做、缺 1–2 种主要食材、其他相关建议”稳定分组和排序；
+- [ ] 在结果与详情中明确展示已有、缺少、基础调料和可选食材；
+- [ ] 保留自由文本搜索，新增并列的“按现有食材找菜”Web UI；
+- [ ] 为当前菜谱增加快捷问题、停止生成、重试和复制回答；
+- [ ] 覆盖错误状态、键盘操作、窄屏布局和 Ollama 不可用时的主流程；
+- [ ] 完成默认测试、浏览器验收和 Phase 2 性能/质量回归。
+
+完整范围、组件边界、数据流、错误处理和验收标准见
+[`Phase 3 食材驱动产品体验设计`](superpowers/specs/2026-07-15-cookqa-p3-pantry-experience-design.md)。
+
+## 6. 工作区说明
 
 Phase 2 在隔离 worktree 分支 `codex/cookqa-p2` 中实施。结构化补丁工具更新已有文件时仍会返回 `windows sandbox: helper_unknown_error: setup refresh had errors`；本轮已有文件修改均通过先校验后应用的 unified diff 完成，没有使用 PowerShell/Python 直接改写源码。
 
