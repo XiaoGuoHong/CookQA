@@ -1,7 +1,7 @@
 # CookQA 未完成事项
 
 - 更新日期：2026-07-15
-- 当前状态：P0、P1、P2A 已完成；P2B 数据与运维收口尚未完成
+- 当前状态：P0、P1、P2A 已完成；P2B 实现完成，真实运行验收待执行
 - 目标平台：Windows 本机
 - 设计基线：[`docs/superpowers/specs/2026-07-13-cookqa-graph-rag-design.md`](superpowers/specs/2026-07-13-cookqa-graph-rag-design.md)
 - P1 计划：[`docs/superpowers/plans/2026-07-14-cookqa-p1-acceptance-implementation.md`](superpowers/plans/2026-07-14-cookqa-p1-acceptance-implementation.md)
@@ -138,13 +138,22 @@ pip check: No broken requirements found.
 
 P2A 运行产物位于 Git 忽略的 `Data/runtime/benchmark-report.json` 和 `Data/runtime/cold-start-report.json`。
 
-### 4.2 P2B：仍需处理
+### 4.2 P2B：实现完成，待真实验收
 
-以下事项不阻塞 P1，但仍属于 Phase 2 工程收口：
+已实现：
 
-- 为 Neo4j 增加必要索引/约束，并减少可空属性或不存在关系类型引发的通知噪声。
-- 明确 `config/recipe-selection.txt` 与 `config/recipe-selection-mvp.txt` 的职责，避免误用空清单。
-- 为索引版本切换、回滚和历史清理补充长期运行日志与恢复手册。
+- [x] 幂等创建并校验 Recipe 复合唯一约束、版本索引和分类节点名称唯一约束。
+- [x] 关系属性只写入非空值，空 `amount` / `unit` 不再写入 Neo4j。
+- [x] `config/recipe-selection-mvp.txt` 成为唯一 MVP 清单，删除无运行引用的空清单。
+- [x] 清理默认 dry-run，保护活动版本、上一版本和显式保留版本。
+- [x] 激活、回滚和清理写入 `Data/runtime/index-operations.jsonl`。
+- [x] 新增 [`INDEX_RECOVERY.md`](INDEX_RECOVERY.md) 恢复手册。
+
+仍需执行：
+
+- [ ] 在真实 Neo4j/Ollama 上构建并激活新的 200 道菜候选版本，核验 schema。
+- [ ] 执行清理 dry-run、一次验证回滚，并恢复最终期望活动版本。
+- [ ] 运行 integration、50 条 benchmark、cold-start、HTTP/Web UI 冒烟和完整质量门。
 
 ## 5. 工作区说明
 

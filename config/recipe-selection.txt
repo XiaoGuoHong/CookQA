@@ -1,2 +1,0 @@
-# One repository-relative HowToCook Markdown path per line.
-# Populate this file with the confirmed approximately 200-recipe MVP selection.

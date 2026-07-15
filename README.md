@@ -27,7 +27,7 @@ P2A 已于 2026-07-15 完成可重复验证能力收口，本轮实测：
 - API cold-start：`5/5` 成功，ready P50 / P95 `1718.12ms / 1777.52ms`，首次搜索 P50 / P95 `3.22ms / 3.72ms`
 - Ruff 与 `pip check` 通过
 
-P2B 的 Neo4j schema、配置职责和版本运维收口仍在进行，不能将 Phase 2 描述为全部完成。
+P2B 的 Neo4j schema、配置职责和版本运维代码已实现，正在执行真实 200 道菜重建、回滚与最终回归；验收完成前不将 Phase 2 描述为全部完成。
 
 ## 组件
 
@@ -98,7 +98,7 @@ git -C Data/source/howtocook checkout cbc524e28a88bf5ccc6e094004cfbeba1ea6fdf9
 git -C Data/source/howtocook status --short
 ```
 
-`status --short` 应为空。固定选择位于 `config/recipe-selection-mvp.txt`，共 200 条；`config/howtocook-source.json` 固定了上游提交。
+`status --short` 应为空。`config/recipe-selection-mvp.txt` 是唯一 MVP 构建清单，共 200 条；`config/howtocook-source.json` 固定了上游提交。
 
 ## 4. 构建索引
 
@@ -113,11 +113,30 @@ git -C Data/source/howtocook status --short
 1. 验证 200 条源路径全部存在。
 2. 确定性解析为 `recipes.jsonl`。
 3. 构建 BM25 与 FAISS 稠密索引。
-4. 用参数化 Cypher 写入候选 Neo4j 数据版本。
-5. 校验三套索引的菜谱数、ID 哈希、版本与向量维度。
-6. 仅在全部通过后原子更新 `Data/runtime/active.json`。
+4. 幂等创建并验证命名 Neo4j 约束和索引。
+5. 用参数化 Cypher 写入候选 Neo4j 数据版本。
+6. 校验三套索引的菜谱数、ID 哈希、版本与向量维度。
+7. 仅在全部通过后原子更新 `Data/runtime/active.json`。
+8. 通过受保护的清理计划保留当前和上一版本，并处理更旧的已验证版本。
 
 运行数据只写入已被 Git 忽略的 `Data/`。
+
+### 索引版本运维
+
+手动历史清理默认只预览：
+
+```powershell
+python -m cookqa.cli cleanup-indexes --data-dir Data
+```
+
+核对候选后才显式执行；可重复传入 `--keep VERSION` 额外保护版本：
+
+```powershell
+python -m cookqa.cli cleanup-indexes --data-dir Data --keep VERSION_TO_KEEP --apply
+python -m cookqa.cli rollback-indexes --data-dir Data
+```
+
+结构化审计日志位于 Git 忽略的 `Data/runtime/index-operations.jsonl`。完整恢复顺序见 [`docs/INDEX_RECOVERY.md`](docs/INDEX_RECOVERY.md)。
 
 ## 5. 启动和使用
 

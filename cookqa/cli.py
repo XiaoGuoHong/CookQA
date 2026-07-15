@@ -23,6 +23,11 @@ def build_parser() -> argparse.ArgumentParser:
     rollback = subcommands.add_parser("rollback-indexes", help="验证并回滚到上一索引版本")
     rollback.add_argument("--data-dir", type=Path, default=Path("Data"))
 
+    cleanup = subcommands.add_parser("cleanup-indexes", help="预览或执行历史索引清理")
+    cleanup.add_argument("--data-dir", type=Path, default=Path("Data"))
+    cleanup.add_argument("--keep", action="append", default=[], metavar="VERSION")
+    cleanup.add_argument("--apply", action="store_true", help="执行已规划的删除；默认仅预览")
+
     serve = subcommands.add_parser("serve", help="启动本地 FastAPI 服务")
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", type=int, default=8000)
@@ -107,6 +112,38 @@ async def _rollback(args: argparse.Namespace) -> None:
     _print_result(result)
 
 
+async def _cleanup(args: argparse.Namespace) -> None:
+    settings = Settings.from_env()
+    _require_neo4j_password(settings)
+    from neo4j import GraphDatabase
+
+    from cookqa.indexing.builder import BuildPipeline
+    from cookqa.indexing.neo4j_writer import Neo4jGraphWriter
+
+    driver = GraphDatabase.driver(
+        settings.neo4j_uri,
+        auth=(settings.neo4j_user, settings.neo4j_password),
+    )
+    try:
+        await asyncio.to_thread(driver.verify_connectivity)
+        result = await BuildPipeline(
+            embedder=None,
+            graph_writer=Neo4jGraphWriter(driver),
+        ).cleanup_history(
+            args.data_dir,
+            explicit_keep=set(args.keep),
+            apply=args.apply,
+        )
+    finally:
+        driver.close()
+    print(
+        json.dumps(
+            {"status": "ok", "dry_run": not args.apply, **result.as_dict()},
+            ensure_ascii=False,
+        )
+    )
+
+
 def _print_result(result) -> None:
     print(
         json.dumps(
@@ -128,6 +165,9 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "rollback-indexes":
         asyncio.run(_rollback(args))
+        return 0
+    if args.command == "cleanup-indexes":
+        asyncio.run(_cleanup(args))
         return 0
     if args.command == "serve":
         import uvicorn
