@@ -39,6 +39,63 @@ def expected_ids(case: dict) -> set[str]:
     return {stable_recipe_id(path) for path in case["expected_recipe_paths"]}
 
 
+def case_id(case: dict, index: int) -> str:
+    return str(case.get("id") or f"case-{index:03d}")
+
+
+def summarize_case_diagnostics(records: list[dict]) -> dict:
+    misses: list[dict] = []
+    intent_summary: dict[str, dict] = {}
+    degradation_summary: dict[str, dict] = {}
+    failure_summary: dict[str, dict] = {}
+
+    for record in sorted(records, key=lambda item: item["case_id"]):
+        identifier = record["case_id"]
+        intent = record["expected_intent"]
+        intent_bucket = intent_summary.setdefault(
+            intent,
+            {"case_count": 0, "hit_count": 0, "miss_count": 0},
+        )
+        intent_bucket["case_count"] += 1
+        if record["hit"]:
+            intent_bucket["hit_count"] += 1
+        else:
+            intent_bucket["miss_count"] += 1
+            if record["failure_category"] is None:
+                misses.append(
+                    {
+                        "case_id": identifier,
+                        "query": record["query"],
+                        "expected_recipe_ids": record["expected_recipe_ids"],
+                        "returned_recipe_ids": record["returned_recipe_ids"],
+                        "expected_intent": intent,
+                        "actual_intent": record["actual_intent"],
+                    }
+                )
+
+        for component in record["degraded_components"]:
+            bucket = degradation_summary.setdefault(component, {"case_ids": []})
+            bucket["case_ids"].append(identifier)
+
+        category = record["failure_category"]
+        if category is not None:
+            bucket = failure_summary.setdefault(category, {"case_ids": []})
+            bucket["case_ids"].append(identifier)
+
+    for bucket in intent_summary.values():
+        bucket["recall_at_5"] = bucket["hit_count"] / bucket["case_count"]
+    for summary in (degradation_summary, failure_summary):
+        for bucket in summary.values():
+            bucket["case_count"] = len(bucket["case_ids"])
+
+    return {
+        "misses": misses,
+        "intent_summary": dict(sorted(intent_summary.items())),
+        "degradation_summary": dict(sorted(degradation_summary.items())),
+        "failure_summary": dict(sorted(failure_summary.items())),
+    }
+
+
 def violates_constraints(recipe: dict, constraints: dict) -> bool:
     ingredients = {item["name"].casefold() for item in recipe.get("ingredients", [])}
     searchable = ingredients | {str(recipe.get("name", "")).casefold()}
@@ -100,21 +157,75 @@ def run(base_url: str, cases_path: Path, warmups: int, timeout: float) -> dict:
     hits = 0
     hard_filter_violations = 0
     failures: list[dict] = []
+    case_records: list[dict] = []
     with httpx.Client(base_url=base_url, timeout=timeout) as client:
         for _ in range(warmups):
             client.post("/api/v1/search", json={"query": "家常菜"})
-        for case in cases:
+        for index, case in enumerate(cases, start=1):
+            identifier = case_id(case, index)
+            expected = expected_ids(case)
+            record = {
+                "case_id": identifier,
+                "query": case["query"],
+                "expected_recipe_ids": sorted(expected),
+                "returned_recipe_ids": [],
+                "expected_intent": case["intent"],
+                "actual_intent": None,
+                "hit": False,
+                "degraded_components": [],
+                "failure_category": None,
+            }
             started = time.perf_counter()
-            response = client.post("/api/v1/search", json={"query": case["query"]})
+            try:
+                response = client.post("/api/v1/search", json={"query": case["query"]})
+            except httpx.HTTPError:
+                record["failure_category"] = "http_error"
+                case_records.append(record)
+                failures.append(
+                    {"case_id": identifier, "query": case["query"], "error_type": "http_error"}
+                )
+                continue
             elapsed_ms = (time.perf_counter() - started) * 1000
             if response.status_code != 200:
-                failures.append({"query": case["query"], "status": response.status_code})
+                record["failure_category"] = "http_status"
+                case_records.append(record)
+                failures.append(
+                    {
+                        "case_id": identifier,
+                        "query": case["query"],
+                        "status": response.status_code,
+                    }
+                )
                 continue
+            try:
+                payload = response.json()
+                results = payload.get("results", [])
+                returned_ids = [item["recipe"]["recipe_id"] for item in results[:5]]
+            except (KeyError, TypeError, ValueError):
+                record["failure_category"] = "invalid_response"
+                case_records.append(record)
+                failures.append(
+                    {
+                        "case_id": identifier,
+                        "query": case["query"],
+                        "error_type": "invalid_response",
+                    }
+                )
+                continue
+            hit = bool(expected.intersection(returned_ids))
+            record.update(
+                {
+                    "returned_recipe_ids": returned_ids,
+                    "actual_intent": payload.get("query_plan", {}).get("intent"),
+                    "hit": hit,
+                    "degraded_components": sorted(
+                        payload.get("degradation", {}).get("unavailable_components") or []
+                    ),
+                }
+            )
+            case_records.append(record)
             search_samples.append(elapsed_ms)
-            payload = response.json()
-            results = payload.get("results", [])
-            returned_ids = {item["recipe"]["recipe_id"] for item in results[:5]}
-            if expected_ids(case).intersection(returned_ids):
+            if hit:
                 hits += 1
             for item in results:
                 if item.get("constraints_verified") and violates_constraints(
@@ -167,6 +278,17 @@ def run(base_url: str, cases_path: Path, warmups: int, timeout: float) -> dict:
                 except httpx.HTTPError:
                     detail_failures += 1
 
+    diagnostics = summarize_case_diagnostics(case_records)
+    for category, count in (
+        ("warmup_detail", warmup_detail_failures if detail_candidate is not None else 0),
+        ("detail", detail_failures if detail_candidate is not None else 0),
+    ):
+        if count:
+            diagnostics["failure_summary"][category] = {
+                "case_count": count,
+                "case_ids": [],
+            }
+    diagnostics["failure_summary"] = dict(sorted(diagnostics["failure_summary"].items()))
     evaluated = len(cases) - len(failures)
     search_summary = summarize_latencies(search_samples)
     first_token_summary = summarize_latencies(first_token_samples)
@@ -175,6 +297,10 @@ def run(base_url: str, cases_path: Path, warmups: int, timeout: float) -> dict:
         "evaluated_count": evaluated,
         "recall_at_5": hits / evaluated if evaluated else None,
         "hard_filter_violations": hard_filter_violations,
+        "misses": diagnostics["misses"],
+        "intent_summary": diagnostics["intent_summary"],
+        "degradation_summary": diagnostics["degradation_summary"],
+        "failure_summary": diagnostics["failure_summary"],
         "search_samples": search_summary,
         "first_token_samples": first_token_summary,
         "search_p50_ms": search_summary["p50_ms"],
@@ -184,7 +310,6 @@ def run(base_url: str, cases_path: Path, warmups: int, timeout: float) -> dict:
         "first_token_p95_ms": first_token_summary["p95_ms"],
         "warmup_detail_failures": warmup_detail_failures if detail_candidate is not None else 0,
         "detail_failures": detail_failures if detail_candidate is not None else 0,
-        "cold_start_ms": None,
         "targets": {
             "recall_at_5_ge_0_90": evaluated == len(cases) and hits / evaluated >= 0.9
             if evaluated
