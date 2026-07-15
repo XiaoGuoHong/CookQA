@@ -5,6 +5,16 @@ import pytest
 from cookqa.indexing.neo4j_writer import Neo4jGraphWriter
 from cookqa.models import Ingredient, Recipe
 
+EXPECTED_CONSTRAINTS = {
+    "cookqa_recipe_version_unique",
+    "cookqa_ingredient_name_unique",
+    "cookqa_category_name_unique",
+    "cookqa_method_name_unique",
+    "cookqa_tool_name_unique",
+    "cookqa_tag_name_unique",
+}
+EXPECTED_INDEXES = {"cookqa_recipe_data_version"}
+
 
 class RecordingDriver:
     def __init__(self, ids=None):
@@ -13,6 +23,10 @@ class RecordingDriver:
 
     def execute_query(self, cypher, **parameters):
         self.calls.append((cypher, parameters))
+        if "SHOW CONSTRAINTS" in cypher:
+            return ([{"name": name} for name in EXPECTED_CONSTRAINTS], None, None)
+        if "SHOW INDEXES" in cypher:
+            return ([{"name": name} for name in EXPECTED_INDEXES], None, None)
         if "RETURN recipe.recipe_id AS recipe_id" in cypher:
             return ([{"recipe_id": item} for item in self.ids], None, None)
         return ([], None, None)
@@ -26,6 +40,37 @@ def recipe(recipe_id="r1"):
         source_path="dishes/tomato.md",
         source_version="abc",
     )
+
+
+def test_schema_setup_is_idempotent_and_validated():
+    driver = RecordingDriver()
+    writer = Neo4jGraphWriter(driver)
+
+    asyncio.run(writer.ensure_schema())
+    asyncio.run(writer.ensure_schema())
+
+    cypher_calls = [call[0].strip() for call in driver.calls]
+    create_calls = [cypher for cypher in cypher_calls if cypher.startswith("CREATE")]
+    assert len(create_calls) == 14
+    assert all("IF NOT EXISTS" in cypher for cypher in create_calls)
+    assert sum("SHOW CONSTRAINTS" in cypher for cypher in cypher_calls) == 2
+    assert sum("SHOW INDEXES" in cypher for cypher in cypher_calls) == 2
+
+
+def test_writer_omits_nullable_relationship_properties():
+    item = recipe()
+    driver = RecordingDriver()
+    writer = Neo4jGraphWriter(driver)
+
+    asyncio.run(writer.write_version([item], "v2"))
+
+    cypher, parameters = driver.calls[-1]
+    ingredient = parameters["recipes"][0]["ingredients"][0]
+    assert ingredient["relationship_properties"] == {
+        "optional": False,
+        "raw": "番茄",
+    }
+    assert "SET relation = ingredient.relationship_properties" in cypher
 
 
 def test_writer_keeps_recipe_versions_isolated():

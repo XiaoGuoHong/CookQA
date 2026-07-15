@@ -22,6 +22,10 @@ class FakeGraphWriter:
         self.deleted = []
         self.kept = []
 
+    async def ensure_schema(self):
+        if self.fail_at == "schema":
+            raise RuntimeError("schema failed")
+
     async def write_version(self, recipes, data_version):
         self.written.append(data_version)
         self.versions[data_version] = {recipe.recipe_id for recipe in recipes}
@@ -106,6 +110,22 @@ def test_failed_candidate_preserves_active_version(tmp_path, fail_at):
 
     assert active_path.read_bytes() == original
     assert writer.deleted[-1] == writer.written[-1]
+    assert first.manifest.data_version in writer.versions
+
+
+def test_schema_failure_preserves_active_version(tmp_path):
+    writer = FakeGraphWriter()
+    first, data_dir = run_build(tmp_path, writer)
+    active_path = data_dir / "runtime" / "active.json"
+    original = active_path.read_bytes()
+    written_before = list(writer.written)
+    writer.fail_at = "schema"
+
+    with pytest.raises(RuntimeError, match="schema failed"):
+        run_second_build(tmp_path, writer, data_dir)
+
+    assert active_path.read_bytes() == original
+    assert writer.written == written_before
     assert first.manifest.data_version in writer.versions
 
 

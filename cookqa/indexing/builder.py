@@ -28,6 +28,8 @@ logger = logging.getLogger(__name__)
 
 
 class GraphWriter(Protocol):
+    async def ensure_schema(self) -> None: ...
+
     async def write_version(self, recipes: list[Recipe], data_version: str) -> None: ...
 
     async def validate_version(
@@ -144,6 +146,7 @@ class BuildPipeline:
                 staging_dir / "faiss.ids.json",
             )
 
+            await self.graph_writer.ensure_schema()
             candidate_started = True
             await self.graph_writer.write_version(recipes, data_version)
             graph_ids = await self.graph_writer.validate_version(recipes, data_version)

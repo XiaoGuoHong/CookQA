@@ -18,6 +18,9 @@ class FakeGraphWriter:
     def __init__(self):
         self.ids = set()
 
+    async def ensure_schema(self):
+        return None
+
     async def write_version(self, recipes, data_version):
         self.ids = {recipe.recipe_id for recipe in recipes}
 
