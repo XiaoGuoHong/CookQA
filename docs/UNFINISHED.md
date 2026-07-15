@@ -1,7 +1,7 @@
 # CookQA 未完成事项
 
-- 更新日期：2026-07-14
-- 当前状态：P0、P1 已完成；P2 工程收口尚未完成
+- 更新日期：2026-07-15
+- 当前状态：P0、P1、P2A 已完成；P2B 数据与运维收口尚未完成
 - 目标平台：Windows 本机
 - 设计基线：[`docs/superpowers/specs/2026-07-13-cookqa-graph-rag-design.md`](superpowers/specs/2026-07-13-cookqa-graph-rag-design.md)
 - P1 计划：[`docs/superpowers/plans/2026-07-14-cookqa-p1-acceptance-implementation.md`](superpowers/plans/2026-07-14-cookqa-p1-acceptance-implementation.md)
@@ -104,21 +104,50 @@ GET /static/app.js -> 200
 
 测试使用的临时 CookQA API 进程已停止；Neo4j Windows 服务保持运行。
 
-## 4. P2：仍需处理
+## 4. P2 工程收口
 
-以下事项不阻塞 P1，但仍属于后续工程收口：
+### 4.1 P2A：已完成
 
-- 处理 FastAPI TestClient 的 `httpx` 兼容层弃用警告。
-- 为真实 Neo4j/Ollama 集成测试增加可选 pytest 标记和独立运行说明。
-- 让 benchmark 在报告中保存未命中案例、意图和降级组件汇总，减少后续排查成本。
-- 将 `cold_start_ms` 从当前 `null` 改为可重复、自动化的独立冷启动测量。
+2026-07-15 在真实 Neo4j、Ollama 和现有 200 道菜活动索引上完成验收：
+
+```text
+default pytest: 115 passed, 2 deselected, 0 warnings
+integration pytest: 2 passed, 114 deselected
+Recall@5: 0.90
+hard_filter_violations: 0
+search P50: 14.48ms
+search P95: 218.66ms
+first-token P50: 548.59ms
+first-token P95: 554.30ms
+benchmark failures: 0
+cold-start success: 5/5
+cold-start ready P50: 1718.12ms
+cold-start ready P95: 1777.52ms
+cold-start first-search P50: 3.22ms
+cold-start first-search P95: 3.72ms
+Ruff: All checks passed!
+pip check: No broken requirements found.
+```
+
+已完成事项：
+
+- [x] 使用 httpx ASGI transport 替换弃用的 FastAPI TestClient 测试路径。
+- [x] 增加默认隔离、显式 `-m integration` 启用的真实服务测试。
+- [x] benchmark 保存未命中案例、意图汇总、降级组件和安全失败类别。
+- [x] 使用独立报告重复测量新 API 进程的首次 ready 和首次搜索。
+
+P2A 运行产物位于 Git 忽略的 `Data/runtime/benchmark-report.json` 和 `Data/runtime/cold-start-report.json`。
+
+### 4.2 P2B：仍需处理
+
+以下事项不阻塞 P1，但仍属于 Phase 2 工程收口：
+
 - 为 Neo4j 增加必要索引/约束，并减少可空属性或不存在关系类型引发的通知噪声。
 - 明确 `config/recipe-selection.txt` 与 `config/recipe-selection-mvp.txt` 的职责，避免误用空清单。
 - 为索引版本切换、回滚和历史清理补充长期运行日志与恢复手册。
-- P1 改动尚未提交；提交前继续保持密码和运行数据不进入 Git。
 
 ## 5. 工作区说明
 
-当前工作分支为 `agent/publish-cookqa`，工作区包含本轮 P1 的已跟踪修改和新增测试。结构化补丁工具更新已有文件时仍会间歇返回 `windows sandbox: helper_unknown_error: setup refresh had errors`；本轮源码改动均通过可审计补丁完成，没有使用 PowerShell/Python 直接改写源码。
+Phase 2 在隔离 worktree 分支 `codex/cookqa-p2` 中实施。结构化补丁工具更新已有文件时仍会返回 `windows sandbox: helper_unknown_error: setup refresh had errors`；本轮已有文件修改均通过先校验后应用的 unified diff 完成，没有使用 PowerShell/Python 直接改写源码。
 
-本地未跟踪的 `tests/.sandbox-probe` 属于既有沙箱探针，本轮未修改，不应提交。
+原始 checkout 中未跟踪的 `tests/.sandbox-probe` 属于既有沙箱探针，本轮未修改，也未进入隔离 worktree 或任何提交。
