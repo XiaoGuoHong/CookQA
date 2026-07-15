@@ -1,7 +1,7 @@
 # CookQA 未完成事项
 
 - 更新日期：2026-07-15
-- 当前状态：P0、P1、P2A 已完成；P2B 实现完成，真实运行验收待执行
+- 当前状态：P0、P1、Phase 2 已完成；当前定义范围内无未完成工程项
 - 目标平台：Windows 本机
 - 设计基线：[`docs/superpowers/specs/2026-07-13-cookqa-graph-rag-design.md`](superpowers/specs/2026-07-13-cookqa-graph-rag-design.md)
 - P1 计划：[`docs/superpowers/plans/2026-07-14-cookqa-p1-acceptance-implementation.md`](superpowers/plans/2026-07-14-cookqa-p1-acceptance-implementation.md)
@@ -138,7 +138,7 @@ pip check: No broken requirements found.
 
 P2A 运行产物位于 Git 忽略的 `Data/runtime/benchmark-report.json` 和 `Data/runtime/cold-start-report.json`。
 
-### 4.2 P2B：实现完成，待真实验收
+### 4.2 P2B：已完成
 
 已实现：
 
@@ -149,11 +149,38 @@ P2A 运行产物位于 Git 忽略的 `Data/runtime/benchmark-report.json` 和 `D
 - [x] 激活、回滚和清理写入 `Data/runtime/index-operations.jsonl`。
 - [x] 新增 [`INDEX_RECOVERY.md`](INDEX_RECOVERY.md) 恢复手册。
 
-仍需执行：
+2026-07-15 最终真实验收：
 
-- [ ] 在真实 Neo4j/Ollama 上构建并激活新的 200 道菜候选版本，核验 schema。
-- [ ] 执行清理 dry-run、一次验证回滚，并恢复最终期望活动版本。
-- [ ] 运行 integration、50 条 benchmark、cold-start、HTTP/Web UI 冒烟和完整质量门。
+```text
+default pytest: 123 passed, 2 deselected, 0 warnings
+integration pytest: 2 passed, 123 deselected
+new active recipe count: 200
+retained previous recipe count: 200
+named constraints: 6
+named Recipe data-version indexes: 1
+cleanup dry-run candidates: 0
+cleanup invalid local entries: 0
+cleanup graph-only versions: 0
+validated rollback: success
+final version restore: success
+Recall@5: 0.90
+hard_filter_violations: 0
+search P50: 14.04ms
+search P95: 271.83ms
+first-token P50: 529.56ms
+first-token P95: 543.11ms
+benchmark failures: 0
+cold-start success: 5/5
+cold-start ready P50: 1711.49ms
+cold-start ready P95: 2308.97ms
+cold-start first-search P50: 2.88ms
+cold-start first-search P95: 3.18ms
+HTTP/Web UI smoke: 200 / 200 / 200 / 200
+Ruff: All checks passed!
+pip check: No broken requirements found.
+```
+
+活动指针最终指向本轮新构建版本，上一版本仍保留并已验证可回滚。benchmark、cold-start 和操作审计均位于 Git 忽略的 `Data/runtime/`，未提交密码或运行数据。
 
 ## 5. 工作区说明
 
