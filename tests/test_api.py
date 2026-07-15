@@ -1,5 +1,3 @@
-from fastapi.testclient import TestClient
-
 from api.app import create_app
 from cookqa.models import (
     ComponentStatus,
@@ -10,6 +8,7 @@ from cookqa.models import (
     Recipe,
     SearchResponse,
 )
+from tests.http_client import asgi_client
 
 
 class FakeService:
@@ -61,60 +60,71 @@ class FakeReadiness:
         )
 
 
-def client(ready=True):
+def app(ready=True):
     generator = FakeGenerator()
-    app = create_app(FakeService(), FakeReadiness(ready), generator, mount_web=False)
-    return TestClient(app), generator
+    application = create_app(FakeService(), FakeReadiness(ready), generator, mount_web=False)
+    return application, generator
 
 
-def test_search_rejects_blank_query():
-    test_client, _ = client()
+async def test_search_rejects_blank_query():
+    application, _ = app()
 
-    response = test_client.post("/api/v1/search", json={"query": "   "})
+    async with asgi_client(application) as client:
+        response = await client.post("/api/v1/search", json={"query": "   "})
 
     assert response.status_code == 422
 
 
-def test_recipe_detail_does_not_call_generator():
-    test_client, generator = client()
+async def test_recipe_detail_does_not_call_generator():
+    application, generator = app()
 
-    response = test_client.get("/api/v1/recipes/r1")
+    async with asgi_client(application) as client:
+        response = await client.get("/api/v1/recipes/r1")
 
     assert response.status_code == 200
     assert generator.calls == 0
 
 
-def test_missing_recipe_returns_404():
-    test_client, _ = client()
+async def test_missing_recipe_returns_404():
+    application, _ = app()
 
-    response = test_client.get("/api/v1/recipes/missing")
+    async with asgi_client(application) as client:
+        response = await client.get("/api/v1/recipes/missing")
 
     assert response.status_code == 404
 
 
-def test_ready_reports_manifest_mismatch():
-    test_client, _ = client(ready=False)
+async def test_ready_reports_manifest_mismatch():
+    application, _ = app(ready=False)
 
-    response = test_client.get("/ready")
+    async with asgi_client(application) as client:
+        response = await client.get("/ready")
 
     assert response.status_code == 503
     assert response.json()["ready"] is False
 
 
-def test_stream_answer_is_separate_from_recipe_detail():
-    test_client, generator = client()
+async def test_stream_answer_is_separate_from_recipe_detail():
+    application, generator = app()
 
-    response = test_client.post("/api/v1/recipes/r1/answer/stream", json={"question": "怎么做"})
+    async with asgi_client(application) as client:
+        response = await client.post(
+            "/api/v1/recipes/r1/answer/stream",
+            json={"question": "怎么做"},
+        )
 
     assert response.status_code == 200
     assert response.text == "第一段第二段"
     assert generator.calls == 1
 
 
-def test_health_only_checks_process_liveness():
-    test_client, _ = client(ready=False)
+async def test_health_only_checks_process_liveness():
+    application, _ = app(ready=False)
 
-    assert test_client.get("/health").json() == {
+    async with asgi_client(application) as client:
+        response = await client.get("/health")
+
+    assert response.json() == {
         "status": "ok",
         "service": "CookQA",
         "version": "0.1.0",

@@ -1,31 +1,35 @@
-from fastapi.testclient import TestClient
-
 from api.app import create_app
+from tests.http_client import asgi_client
 from tests.test_api import FakeGenerator, FakeReadiness, FakeService
 
 
-def web_client():
-    return TestClient(create_app(FakeService(), FakeReadiness(), FakeGenerator()))
+def web_app():
+    return create_app(FakeService(), FakeReadiness(), FakeGenerator())
 
 
-def test_homepage_and_static_assets_are_served():
-    client = web_client()
+async def test_homepage_and_static_assets_are_served():
+    async with asgi_client(web_app()) as client:
+        homepage = await client.get("/")
+        javascript = await client.get("/static/app.js")
+        styles = await client.get("/static/styles.css")
 
-    assert client.get("/").status_code == 200
-    assert client.get("/static/app.js").status_code == 200
-    assert client.get("/static/styles.css").status_code == 200
+    assert homepage.status_code == 200
+    assert javascript.status_code == 200
+    assert styles.status_code == 200
 
 
-def test_homepage_has_accessible_search_controls():
-    html = web_client().get("/").text
+async def test_homepage_has_accessible_search_controls():
+    async with asgi_client(web_app()) as client:
+        html = (await client.get("/")).text
 
     assert 'id="query-input"' in html
     assert 'id="search-form"' in html
     assert 'aria-live="polite"' in html
 
 
-def test_javascript_uses_separate_search_detail_and_generation_endpoints():
-    javascript = web_client().get("/static/app.js").text
+async def test_javascript_uses_separate_search_detail_and_generation_endpoints():
+    async with asgi_client(web_app()) as client:
+        javascript = (await client.get("/static/app.js")).text
 
     assert "/api/v1/search" in javascript
     assert "/api/v1/recipes/" in javascript

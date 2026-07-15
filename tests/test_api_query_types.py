@@ -1,5 +1,4 @@
 import pytest
-from fastapi.testclient import TestClient
 
 from api.app import create_app
 from cookqa.models import (
@@ -12,6 +11,7 @@ from cookqa.models import (
 from cookqa.query.router import QueryRouter
 from cookqa.retrieval.coordinator import RetrievalCoordinator
 from cookqa.service import SearchService
+from tests.http_client import asgi_client
 
 
 class FakeRetriever:
@@ -58,7 +58,7 @@ def recipe(recipe_id, name, ingredients, *, aliases=None, duration=15):
     )
 
 
-def client():
+def app():
     recipes = {
         "r1": recipe("r1", "番茄炒蛋", ["番茄", "鸡蛋"], aliases=["西红柿炒鸡蛋"]),
         "r2": recipe("r2", "宫保鸡丁", ["鸡肉", "花生"]),
@@ -80,8 +80,7 @@ def client():
         [FakeRetriever("bm25"), FakeRetriever("faiss"), FakeRetriever("neo4j")],
     )
     service = SearchService(router, coordinator, recipes)
-    app = create_app(service, FakeReadiness(), FakeGenerator(), mount_web=False)
-    return TestClient(app)
+    return create_app(service, FakeReadiness(), FakeGenerator(), mount_web=False)
 
 
 @pytest.mark.parametrize(
@@ -95,18 +94,20 @@ def client():
         ("宫保鸡丁和辣子鸡有什么区别", "recipe_comparison"),
     ],
 )
-def test_six_query_types_have_service_and_api_behavior(query, intent):
-    response = client().post("/api/v1/search", json={"query": query})
+async def test_six_query_types_have_service_and_api_behavior(query, intent):
+    async with asgi_client(app()) as client:
+        response = await client.post("/api/v1/search", json={"query": query})
 
     assert response.status_code == 200
     assert response.json()["query_plan"]["intent"] == intent
 
 
-def test_comparison_api_returns_two_targets_and_structured_differences():
-    response = client().post(
-        "/api/v1/search",
-        json={"query": "宫保鸡丁和辣子鸡有什么区别"},
-    )
+async def test_comparison_api_returns_two_targets_and_structured_differences():
+    async with asgi_client(app()) as client:
+        response = await client.post(
+            "/api/v1/search",
+            json={"query": "宫保鸡丁和辣子鸡有什么区别"},
+        )
     payload = response.json()
 
     assert response.status_code == 200
