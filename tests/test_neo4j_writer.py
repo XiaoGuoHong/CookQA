@@ -17,8 +17,9 @@ EXPECTED_INDEXES = {"cookqa_recipe_data_version"}
 
 
 class RecordingDriver:
-    def __init__(self, ids=None):
+    def __init__(self, ids=None, versions=None):
         self.ids = list(ids or [])
+        self.versions = list(versions or [])
         self.calls = []
 
     def execute_query(self, cypher, **parameters):
@@ -29,6 +30,10 @@ class RecordingDriver:
             return ([{"name": name} for name in EXPECTED_INDEXES], None, None)
         if "RETURN recipe.recipe_id AS recipe_id" in cypher:
             return ([{"recipe_id": item} for item in self.ids], None, None)
+        if "RETURN DISTINCT recipe.data_version AS data_version" in cypher:
+            return (
+                [{"data_version": item} for item in self.versions], None, None
+            )
         return ([], None, None)
 
 
@@ -106,19 +111,9 @@ def test_delete_version_is_scoped():
     assert parameters["data_version"] == "candidate"
 
 
-def test_cleanup_versions_is_parameterized():
-    driver = RecordingDriver()
-    writer = Neo4jGraphWriter(driver)
+def test_list_versions_returns_distinct_graph_versions():
+    writer = Neo4jGraphWriter(RecordingDriver(versions=["v2", "v1"]))
 
-    asyncio.run(writer.cleanup_versions({"v2", "v1"}))
+    versions = asyncio.run(writer.list_versions())
 
-    cypher, parameters = driver.calls[-1]
-    assert "NOT recipe.data_version IN $keep_versions" in cypher
-    assert parameters["keep_versions"] == ["v1", "v2"]
-
-
-def test_cleanup_rejects_empty_keep_set():
-    writer = Neo4jGraphWriter(RecordingDriver())
-
-    with pytest.raises(ValueError, match="至少保留一个版本"):
-        asyncio.run(writer.cleanup_versions(set()))
+    assert versions == {"v1", "v2"}

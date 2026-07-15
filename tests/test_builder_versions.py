@@ -1,4 +1,5 @@
 import asyncio
+import json
 from pathlib import Path
 
 import pytest
@@ -7,6 +8,15 @@ import cookqa.indexing.builder as builder_module
 from cookqa.indexing.builder import BuildPipeline
 
 FIXTURE = Path(__file__).parent / "fixtures" / "howtocook" / "sample.md"
+
+
+def read_operation_events(data_dir):
+    return [
+        json.loads(line)
+        for line in (data_dir / "runtime" / "index-operations.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
 
 
 class FakeEmbedder:
@@ -20,7 +30,6 @@ class FakeGraphWriter:
         self.fail_at = fail_at
         self.written = []
         self.deleted = []
-        self.kept = []
 
     async def ensure_schema(self):
         if self.fail_at == "schema":
@@ -41,15 +50,10 @@ class FakeGraphWriter:
         self.deleted.append(data_version)
         self.versions.pop(data_version, None)
 
-    async def cleanup_versions(self, keep_versions):
-        self.kept.append(set(keep_versions))
+    async def list_versions(self):
         if self.fail_at == "cleanup":
             raise RuntimeError("cleanup failed")
-        self.versions = {
-            version: ids
-            for version, ids in self.versions.items()
-            if version in keep_versions
-        }
+        return set(self.versions)
 
 
 def build_inputs(tmp_path):
@@ -146,6 +150,10 @@ def test_activation_failure_preserves_old_version(tmp_path, monkeypatch):
     assert active_path.read_bytes() == original
     assert writer.deleted[-1] == writer.written[-1]
     assert first.manifest.data_version in writer.versions
+    event = read_operation_events(data_dir)[-1]
+    assert event["operation"] == "activate"
+    assert event["result"] == "failed"
+    assert event["error_category"] == "OSError"
 
 
 def test_successful_build_retains_current_and_previous(tmp_path):
@@ -154,9 +162,22 @@ def test_successful_build_retains_current_and_previous(tmp_path):
     second = run_second_build(tmp_path, writer, data_dir)
 
     assert first.manifest.data_version != second.manifest.data_version
-    assert writer.kept[-1] == {
+    assert set(writer.versions) == {
         first.manifest.data_version,
         second.manifest.data_version,
+    }
+
+
+def test_automatic_cleanup_deletes_only_versions_older_than_previous(tmp_path):
+    writer = FakeGraphWriter()
+    first, data_dir = run_build(tmp_path, writer)
+    second = run_second_build(tmp_path, writer, data_dir)
+    third = run_second_build(tmp_path, writer, data_dir)
+
+    assert writer.deleted[-1] == first.manifest.data_version
+    assert set(writer.versions) == {
+        second.manifest.data_version,
+        third.manifest.data_version,
     }
 
 
@@ -170,6 +191,9 @@ def test_cleanup_failure_does_not_undo_activation(tmp_path):
 
     assert active.version == second.manifest.data_version
     assert active.previous_version == first.manifest.data_version
+    event = read_operation_events(data_dir)[-1]
+    assert event["operation"] == "cleanup"
+    assert event["result"] == "failed"
 
 
 def test_rollback_validates_and_swaps_versions(tmp_path):
@@ -183,6 +207,9 @@ def test_rollback_validates_and_swaps_versions(tmp_path):
     assert result.manifest.data_version == first.manifest.data_version
     assert active.version == first.manifest.data_version
     assert active.previous_version == second.manifest.data_version
+    event = read_operation_events(data_dir)[-1]
+    assert event["operation"] == "rollback"
+    assert event["result"] == "success"
 
 
 def test_failed_rollback_validation_preserves_current_version(tmp_path):
@@ -198,3 +225,6 @@ def test_failed_rollback_validation_preserves_current_version(tmp_path):
 
     assert active_path.read_bytes() == original
     assert builder_module.read_active_version(data_dir).version == second.manifest.data_version
+    event = read_operation_events(data_dir)[-1]
+    assert event["operation"] == "rollback"
+    assert event["result"] == "failed"

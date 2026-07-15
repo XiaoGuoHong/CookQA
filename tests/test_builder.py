@@ -30,8 +30,8 @@ class FakeGraphWriter:
     async def delete_version(self, data_version):
         self.ids.clear()
 
-    async def cleanup_versions(self, keep_versions):
-        return None
+    async def list_versions(self):
+        return set()
 
 
 def test_builder_activates_only_validated_artifacts(tmp_path):

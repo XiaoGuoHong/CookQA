@@ -17,6 +17,11 @@ from cookqa.indexing.activation import (
     swap_to_previous,
 )
 from cookqa.indexing.manifest import IndexManifest, compute_id_hash, validate_manifest
+from cookqa.indexing.operations import (
+    CleanupResult,
+    append_operation_event,
+    build_cleanup_plan,
+)
 from cookqa.ingest.parser import parse_recipe
 from cookqa.ingest.selection import load_selection, validate_selection
 from cookqa.models import Recipe
@@ -38,9 +43,9 @@ class GraphWriter(Protocol):
         data_version: str,
     ) -> set[str]: ...
 
-    async def delete_version(self, data_version: str) -> None: ...
+    async def list_versions(self) -> set[str]: ...
 
-    async def cleanup_versions(self, keep_versions: set[str]) -> None: ...
+    async def delete_version(self, data_version: str) -> None: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,14 +60,6 @@ def _load_recipes(path: Path) -> list[Recipe]:
         for line in path.read_text(encoding="utf-8").splitlines()
         if line.strip()
     ]
-
-
-def _cleanup_local_versions(indexes_dir: Path, keep_versions: set[str]) -> None:
-    if not indexes_dir.is_dir():
-        return
-    for path in indexes_dir.iterdir():
-        if path.is_dir() and path.name not in keep_versions:
-            shutil.rmtree(path)
 
 
 class BuildPipeline:
@@ -90,6 +87,57 @@ class BuildPipeline:
             embedding_dimension=vector_index.dimension,
         )
         return BuildResult(manifest=manifest, artifact_dir=artifact_dir)
+
+    async def cleanup_history(
+        self,
+        data_dir: Path,
+        explicit_keep: set[str] | None = None,
+        apply: bool = False,
+    ) -> CleanupResult:
+        operation = "cleanup" if apply else "cleanup_dry_run"
+        active = read_active_version(data_dir)
+        source_version = active.version if active is not None else None
+        explicit_keep = set(explicit_keep or set())
+        plan = None
+        deleted: list[str] = []
+        try:
+            graph_versions = await self.graph_writer.list_versions()
+            plan = build_cleanup_plan(
+                data_dir,
+                graph_versions=graph_versions,
+                explicit_keep=explicit_keep,
+            )
+            if apply:
+                for version in plan.candidate_versions:
+                    await self.graph_writer.delete_version(version)
+                    shutil.rmtree(data_dir / "indexes" / version)
+                    deleted.append(version)
+        except Exception as exc:
+            details = {"explicit_keep": sorted(explicit_keep)}
+            if plan is not None:
+                details["plan"] = plan.as_dict()
+                details["deleted_versions"] = deleted
+            append_operation_event(
+                data_dir,
+                operation=operation,
+                source_version=source_version,
+                target_version=None,
+                result="failed",
+                error_category=exc.__class__.__name__,
+                details=details,
+            )
+            raise
+
+        result = CleanupResult(plan=plan, deleted_versions=tuple(deleted))
+        append_operation_event(
+            data_dir,
+            operation=operation,
+            source_version=source_version,
+            target_version=None,
+            result="success",
+            details=result.as_dict(),
+        )
+        return result
 
     async def build(
         self,
@@ -180,29 +228,33 @@ class BuildPipeline:
             shutil.copyfile(artifact_dir / "recipes.jsonl", processed_temp)
             os.replace(processed_temp, processed_dir / "recipes.jsonl")
 
-            activate_version(
-                data_dir,
-                data_version,
-                previous.version if previous is not None else None,
-            )
-            activated = True
-
-            keep_versions = {data_version}
-            if previous is not None:
-                keep_versions.add(previous.version)
+            previous_version = previous.version if previous is not None else None
             try:
-                await self.graph_writer.cleanup_versions(keep_versions)
+                activate_version(data_dir, data_version, previous_version)
             except Exception as exc:
-                logger.warning(
-                    "Neo4j 历史版本清理失败 version=%s error=%s",
-                    data_version,
-                    exc.__class__.__name__,
+                append_operation_event(
+                    data_dir,
+                    operation="activate",
+                    source_version=previous_version,
+                    target_version=data_version,
+                    result="failed",
+                    error_category=exc.__class__.__name__,
                 )
+                raise
+            activated = True
+            append_operation_event(
+                data_dir,
+                operation="activate",
+                source_version=previous_version,
+                target_version=data_version,
+                result="success",
+            )
+
             try:
-                _cleanup_local_versions(indexes_dir, keep_versions)
+                await self.cleanup_history(data_dir, apply=True)
             except Exception as exc:
                 logger.warning(
-                    "本地历史版本清理失败 version=%s error=%s",
+                    "历史版本清理失败 version=%s error=%s",
                     data_version,
                     exc.__class__.__name__,
                 )
@@ -227,6 +279,24 @@ class BuildPipeline:
         if active is None or active.previous_version is None:
             raise ValueError("没有可回滚的上一版本")
         artifact_dir = data_dir / "indexes" / active.previous_version
-        result = await self._validate_artifact(artifact_dir)
-        swap_to_previous(data_dir)
+        try:
+            result = await self._validate_artifact(artifact_dir)
+            swap_to_previous(data_dir)
+        except Exception as exc:
+            append_operation_event(
+                data_dir,
+                operation="rollback",
+                source_version=active.version,
+                target_version=active.previous_version,
+                result="failed",
+                error_category=exc.__class__.__name__,
+            )
+            raise
+        append_operation_event(
+            data_dir,
+            operation="rollback",
+            source_version=active.version,
+            target_version=active.previous_version,
+            result="success",
+        )
         return result

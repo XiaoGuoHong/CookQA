@@ -82,14 +82,14 @@ MATCH (recipe:Recipe {data_version: $data_version})
 RETURN recipe.recipe_id AS recipe_id
 """
 
-_DELETE_VERSION_CYPHER = """
-MATCH (recipe:Recipe {data_version: $data_version})
-DETACH DELETE recipe
+_LIST_VERSIONS_CYPHER = """
+MATCH (recipe:Recipe)
+WHERE recipe.data_version IS NOT NULL
+RETURN DISTINCT recipe.data_version AS data_version
 """
 
-_CLEANUP_VERSIONS_CYPHER = """
-MATCH (recipe:Recipe)
-WHERE NOT recipe.data_version IN $keep_versions
+_DELETE_VERSION_CYPHER = """
+MATCH (recipe:Recipe {data_version: $data_version})
 DETACH DELETE recipe
 """
 
@@ -161,19 +161,17 @@ class Neo4jGraphWriter:
             raise ValueError("Neo4j recipe_id 集合与候选版本不一致")
         return actual
 
+    def _list_versions_sync(self) -> set[str]:
+        records, _, _ = self.driver.execute_query(
+            _LIST_VERSIONS_CYPHER,
+            database_=self.database,
+        )
+        return {record["data_version"] for record in records}
+
     def _delete_sync(self, data_version: str) -> None:
         self.driver.execute_query(
             _DELETE_VERSION_CYPHER,
             data_version=data_version,
-            database_=self.database,
-        )
-
-    def _cleanup_sync(self, keep_versions: set[str]) -> None:
-        if not keep_versions:
-            raise ValueError("Neo4j 清理时必须至少保留一个版本")
-        self.driver.execute_query(
-            _CLEANUP_VERSIONS_CYPHER,
-            keep_versions=sorted(keep_versions),
             database_=self.database,
         )
 
@@ -190,8 +188,8 @@ class Neo4jGraphWriter:
     ) -> set[str]:
         return await asyncio.to_thread(self._validate_sync, recipes, data_version)
 
+    async def list_versions(self) -> set[str]:
+        return await asyncio.to_thread(self._list_versions_sync)
+
     async def delete_version(self, data_version: str) -> None:
         await asyncio.to_thread(self._delete_sync, data_version)
-
-    async def cleanup_versions(self, keep_versions: set[str]) -> None:
-        await asyncio.to_thread(self._cleanup_sync, keep_versions)
