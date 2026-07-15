@@ -1,3 +1,7 @@
+import subprocess
+import sys
+from pathlib import Path
+
 from scripts.cold_start import measure_sample, summarize_samples
 
 
@@ -133,3 +137,19 @@ def test_summarize_samples_reports_counts_percentiles_and_target():
         "p95_ms": 40.0,
     }
     assert report["targets"]["all_samples_succeeded"] is False
+
+
+def test_cold_start_script_can_run_directly():
+    project_root = Path(__file__).resolve().parents[1]
+
+    result = subprocess.run(
+        [sys.executable, "scripts/cold_start.py", "--help"],
+        cwd=project_root,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "CookQA API cold-start benchmark" in result.stdout

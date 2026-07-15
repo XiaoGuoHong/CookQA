@@ -12,7 +12,10 @@ from typing import Any
 
 import httpx
 
-from scripts.benchmark import summarize_latencies
+if __package__:
+    from .benchmark import summarize_latencies
+else:
+    from benchmark import summarize_latencies
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
