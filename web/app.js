@@ -13,6 +13,7 @@ const answerButton = document.querySelector('#answer-button');
 const answerOutput = document.querySelector('#answer-output');
 
 let selectedRecipeId = null;
+let answerController = null;
 
 function setStatus(message) {
   statusBox.textContent = message;
@@ -144,6 +145,8 @@ async function openRecipe(recipeId) {
 async function streamAnswer() {
   if (!selectedRecipeId) return;
   answerButton.disabled = true;
+  answerController = new AbortController();
+  document.querySelector('#stop-answer')?.toggleAttribute('disabled', false);
   answerOutput.textContent = '正在连接本地模型…';
   try {
     const response = await fetch(
@@ -152,6 +155,7 @@ async function streamAnswer() {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({question: answerQuestion.value.trim() || null}),
+        signal: answerController?.signal,
       },
     );
     if (!response.ok || !response.body) throw new Error('本地模型暂时不可用。');
@@ -199,3 +203,93 @@ document.querySelector('#close-detail').addEventListener('click', () => {
   selectedRecipeId = null;
 });
 answerButton.addEventListener('click', streamAnswer);
+
+const pantryForm = document.querySelector('#pantry-form');
+const pantrySearchButton = document.querySelector('#pantry-search-button');
+const searchModeForm = document.querySelector('#search-form');
+
+function splitIngredients(value) {
+  return value.split(/[，,、\n]/).map((item) => item.trim()).filter(Boolean);
+}
+
+function renderPantry(payload) {
+  resultsBox.replaceChildren();
+  showDegradation({warnings: payload.warnings});
+  for (const [group, label] of [['ready', '可以直接做'], ['near', '还差 1-2 种主要食材'], ['related', '其他相关建议']]) {
+    const matches = payload[group] || [];
+    if (!matches.length) continue;
+    resultsBox.append(element('h3', label, 'results__group-title'));
+    matches.forEach((match) => {
+      const card = element('article', '', 'recipe-card');
+      const button = element('button', '', 'recipe-card__button');
+      button.type = 'button';
+      button.append(element('strong', match.recipe.name));
+      button.append(element('p', `覆盖率 ${(match.coverage * 100).toFixed(0)}% · 已有：${match.available_ingredients.join('、') || '无'}`));
+      button.append(element('p', `缺少：${match.missing_ingredients.join('、') || '无'} · 可选：${match.optional_ingredients.join('、') || '无'}`));
+      button.append(element('p', (match.reasons || []).join(' · ')));
+      button.addEventListener('click', () => openRecipe(match.recipe.recipe_id));
+      card.append(button);
+      resultsBox.append(card);
+    });
+  }
+  const count = ['ready', 'near', 'related'].reduce((sum, key) => sum + (payload[key] || []).length, 0);
+  setStatus(count ? `找到 ${count} 道匹配菜谱` : '没有找到匹配菜谱，请减少限制条件');
+}
+
+async function searchPantry() {
+  const existing = splitIngredients(document.querySelector('#existing-ingredients').value);
+  if (!existing.length) return;
+  const excluded = splitIngredients(document.querySelector('#excluded-ingredients').value);
+  const max = document.querySelector('#max-minutes').value;
+  pantrySearchButton.disabled = true;
+  setStatus('正在按现有食材匹配菜谱…');
+  try {
+    const payload = await requestJson('/api/v1/pantry/search', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        existing_ingredients: existing,
+        excluded_ingredients: excluded,
+        max_minutes: max ? Number(max) : null,
+        no_spicy: document.querySelector('#no-spicy').checked,
+        use_pantry_staples: document.querySelector('#use-staples').checked,
+      }),
+    });
+    renderPantry(payload);
+  } catch (error) {
+    setStatus(error.message);
+  } finally {
+    pantrySearchButton.disabled = false;
+  }
+}
+
+pantryForm?.addEventListener('submit', (event) => {
+  event.preventDefault();
+  searchPantry();
+});
+document.querySelectorAll('[data-mode]').forEach((button) => {
+  button.addEventListener('click', () => {
+    const pantry = button.dataset.mode === 'pantry';
+    document.querySelectorAll('[data-mode]').forEach((item) => {
+      const active = item === button;
+      item.classList.toggle('is-active', active);
+      item.setAttribute('aria-selected', String(active));
+    });
+    searchModeForm.hidden = pantry;
+    pantryForm.hidden = !pantry;
+  });
+});
+document.querySelectorAll('[data-question]').forEach((button) => {
+  button.addEventListener('click', () => {
+    answerQuestion.value = button.dataset.question;
+    streamAnswer();
+  });
+});
+document.querySelector('#stop-answer')?.addEventListener('click', () => {
+  answerController?.abort();
+  answerOutput.textContent += '\n已停止生成。';
+});
+document.querySelector('#retry-answer')?.addEventListener('click', streamAnswer);
+document.querySelector('#copy-answer')?.addEventListener('click', async () => {
+  if (answerOutput.textContent) await navigator.clipboard.writeText(answerOutput.textContent);
+});

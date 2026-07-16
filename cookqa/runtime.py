@@ -9,6 +9,7 @@ from cookqa.config import Settings
 from cookqa.generation.ollama import OllamaClient
 from cookqa.indexing.manifest import IndexManifest, ManifestMismatch, validate_manifest
 from cookqa.models import ComponentStatus, ReadinessReport, Recipe
+from cookqa.pantry import PantryMatcher
 from cookqa.query.router import QueryRouter
 from cookqa.retrieval.bm25 import BM25Retriever
 from cookqa.retrieval.coordinator import RetrievalCoordinator
@@ -168,6 +169,7 @@ def build_runtime(settings: Settings):
         ingredient_aliases = _load_ingredient_aliases()
         router = QueryRouter(recipe_names, ingredient_names, ingredient_aliases=ingredient_aliases)
         service = SearchService(router, RetrievalCoordinator(recipes, retrievers), recipes)
+        service.pantry_matcher = PantryMatcher.from_files(recipes.values(), ingredient_aliases)
         readiness = RuntimeReadiness(manifest, bm25, vector_index, driver, ollama)
         return service, readiness, ollama
     except Exception as exc:

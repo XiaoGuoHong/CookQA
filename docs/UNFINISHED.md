@@ -1,7 +1,7 @@
 # CookQA 未完成事项
 
 - 更新日期：2026-07-15
-- 当前状态：P0、P1、Phase 2 已完成；Phase 3 产品范围已确认、尚未实现
+- 当前状态：P0、P1、Phase 2 已完成；Phase 3 核心实现已完成，真实环境验收待执行
 - 目标平台：Windows 本机
 - 设计基线：[`docs/superpowers/specs/2026-07-13-cookqa-graph-rag-design.md`](superpowers/specs/2026-07-13-cookqa-graph-rag-design.md)
 - P1 计划：[`docs/superpowers/plans/2026-07-14-cookqa-p1-acceptance-implementation.md`](superpowers/plans/2026-07-14-cookqa-p1-acceptance-implementation.md)

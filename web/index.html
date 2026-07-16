@@ -26,7 +26,23 @@
           >
           <button id="search-button" type="submit">查菜谱</button>
         </form>
-        <div class="examples" aria-label="示例问题">
+        <div class="mode-switch" role="tablist" aria-label="搜索模式">
+          <button type="button" class="mode-switch__button is-active" data-mode="search" role="tab" aria-selected="true">智能搜索</button>
+          <button type="button" class="mode-switch__button" data-mode="pantry" role="tab" aria-selected="false">按现有食材找菜</button>
+        </div>
+        <form id="pantry-form" class="pantry-form" hidden>
+          <label for="existing-ingredients">已有食材</label>
+          <input id="existing-ingredients" placeholder="例如：番茄、鸡蛋" required>
+          <label for="excluded-ingredients">排除食材</label>
+          <input id="excluded-ingredients" placeholder="例如：香菜">
+          <div class="pantry-form__row">
+            <label for="max-minutes">最长耗时（分钟）</label>
+            <input id="max-minutes" type="number" min="1" max="1440" inputmode="numeric">
+            <label><input id="no-spicy" type="checkbox"> 不辣</label>
+            <label><input id="use-staples" type="checkbox" checked> 使用基础调料</label>
+          </div>
+          <button id="pantry-search-button" type="submit">按食材找菜</button>
+        </form>        <div class="examples" aria-label="示例问题">
           <button type="button" data-query="宫保鸡丁怎么做">宫保鸡丁怎么做</button>
           <button type="button" data-query="鸡蛋和番茄能做什么">鸡蛋和番茄能做什么</button>
           <button type="button" data-query="想吃清淡又下饭的菜">清淡又下饭</button>
@@ -54,9 +70,10 @@
         <div id="detail-content"></div>
         <div class="answer-box">
           <label for="answer-question">需要自然语言说明时再调用本地模型</label>
+          <div class="answer-box__quick" aria-label="快捷问题"><button type="button" data-question="缺少某种食材时可以怎么替代？">食材替代</button><button type="button" data-question="哪一步最容易失败？">易错步骤</button><button type="button" data-question="没有某个厨具时怎么办？">厨具替代</button><button type="button" data-question="概括制作顺序。">制作顺序</button></div>
           <div class="answer-box__controls">
             <input id="answer-question" maxlength="500" placeholder="可选：例如有哪些容易出错的地方？">
-            <button id="answer-button" type="button">生成说明</button>
+            <button id="stop-answer" type="button" disabled>停止</button><button id="retry-answer" type="button">重试</button><button id="copy-answer" type="button">复制</button><button id="answer-button" type="button">生成说明</button>
           </div>
           <pre id="answer-output" aria-live="polite"></pre>
         </div>

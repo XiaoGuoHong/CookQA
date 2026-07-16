@@ -34,3 +34,15 @@ async def test_javascript_uses_separate_search_detail_and_generation_endpoints()
     assert "/api/v1/search" in javascript
     assert "/api/v1/recipes/" in javascript
     assert "/answer/stream" in javascript
+
+async def test_homepage_exposes_pantry_mode_and_structured_controls():
+    async with asgi_client(web_app()) as client:
+        html = (await client.get("/")).text
+        javascript = (await client.get("/static/app.js")).text
+
+    assert 'data-mode="pantry"' in html
+    assert 'id="existing-ingredients"' in html
+    assert 'id="excluded-ingredients"' in html
+    assert "/api/v1/pantry/search" in javascript
+    assert "missing_ingredients" in javascript
+    assert "navigator.clipboard" in javascript

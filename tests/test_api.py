@@ -129,3 +129,58 @@ async def test_health_only_checks_process_liveness():
         "service": "CookQA",
         "version": "0.1.0",
     }
+
+
+class FakePantryMatcher:
+    def __init__(self):
+        self.calls = []
+        self.aliases = {"西红柿": "番茄"}
+
+    def match(self, existing, excluded, **kwargs):
+        from cookqa.models import PantrySearchResponse
+
+        self.calls.append((existing, excluded, kwargs))
+        return PantrySearchResponse(normalized_existing=["番茄"], ready=[])
+
+
+def pantry_app():
+    matcher = FakePantryMatcher()
+    application = create_app(
+        FakeService(), FakeReadiness(), FakeGenerator(), mount_web=False, pantry_matcher=matcher
+    )
+    return application, matcher
+
+
+async def test_pantry_search_validates_and_maps_structured_request():
+    application, matcher = pantry_app()
+
+    async with asgi_client(application) as client:
+        response = await client.post(
+            "/api/v1/pantry/search",
+            json={
+                "existing_ingredients": [" 西红柿 "],
+                "excluded_ingredients": ["葱"],
+                "max_minutes": 30,
+                "no_spicy": True,
+                "use_pantry_staples": False,
+            },
+        )
+
+    assert response.status_code == 200
+    assert matcher.calls == [
+        (["西红柿"], ["葱"], {"max_minutes": 30, "no_spicy": True, "use_staples": False})
+    ]
+
+
+async def test_pantry_search_rejects_missing_or_conflicting_ingredients():
+    application, _ = pantry_app()
+
+    async with asgi_client(application) as client:
+        missing = await client.post("/api/v1/pantry/search", json={"existing_ingredients": []})
+        conflict = await client.post(
+            "/api/v1/pantry/search",
+            json={"existing_ingredients": ["番茄"], "excluded_ingredients": ["西红柿"]},
+        )
+
+    assert missing.status_code == 422
+    assert conflict.status_code == 422

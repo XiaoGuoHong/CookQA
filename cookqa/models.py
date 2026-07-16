@@ -178,6 +178,34 @@ class ComponentStatus(BaseModel):
     detail: str | None = None
 
 
+
+PantryGroup = Literal["ready", "near", "related"]
+
+
+class PantryMatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    recipe: Recipe
+    group: PantryGroup
+    coverage: float = Field(ge=0, le=1)
+    available_ingredients: list[str] = Field(default_factory=list)
+    missing_ingredients: list[str] = Field(default_factory=list)
+    optional_ingredients: list[str] = Field(default_factory=list)
+    staple_ingredients: list[str] = Field(default_factory=list)
+    reasons: list[str] = Field(default_factory=list)
+
+
+class PantrySearchResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    normalized_existing: list[str] = Field(default_factory=list)
+    normalized_excluded: list[str] = Field(default_factory=list)
+    ready: list[PantryMatch] = Field(default_factory=list)
+    near: list[PantryMatch] = Field(default_factory=list)
+    related: list[PantryMatch] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    timings_ms: dict[str, float] = Field(default_factory=dict)
+
 class ReadinessReport(BaseModel):
     ready: bool
     components: dict[str, ComponentStatus]
